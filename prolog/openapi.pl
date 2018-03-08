@@ -123,24 +123,31 @@ path_handlers([Method-Spec|T], Path) -->
 %! path_handler(+Path, +Method, +Spec, -PathList, -Request, ?Result,
 %!              -Handler) is det.
 
-path_handler(Path, Method, Spec, PathList, Request, Result, Handler) :-
-    assertion(Method == get),
+path_handler(Path, _Method, Spec, PathList, Request, Result, Handler) :-
+%   assertion(Method == get),
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
-    parameters(Spec.parameters, PathBindings, Request, Params),
-    append(Params, Result, AllParams),
-    Handler =.. [Spec.operationId|AllParams].
+    (   ParamSpecs = Spec.get(parameters)
+    ->  parameters(ParamSpecs, PathBindings, Request, Params)
+    ;   assertion(PathBindings == []),          % TBD: Proper message
+        Params = []
+    ),
+    append(Params, [Result], AllParams),
+    atom_string(PredName, Spec.operationId),
+    Handler =.. [PredName|AllParams].
 
 parameters([], _, [], []).
 parameters([H|T], PathB, [R0|Req], [P0|Ps]) :-
-    _{name:Name, in:query} :< H,
+    _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H), Opts),
+    atom_string(Name, NameS),
     R0 =.. [Name,P0,Opts],
     parameters(T, PathB, Req, Ps).
 parameters([H|T], PathB, Req, [P0|Ps]) :-
-    _{name:Name, in:path} :< H,
+    _{name:NameS, in:"path"} :< H,
     !,
+    atom_string(Name, NameS),
     (   memberchk(Name=P0, PathB)
     ->  true                                    % TBD: type conversion
     ;   existence_error(path_parameter, Name)
@@ -223,5 +230,6 @@ openapi_dispatch(M:Request) :-
 :- multifile
     system:term_expansion/2.
 
-system:term_expansion(openapi(File, Options), Clauses) :-
+system:term_expansion((:- openapi(File, Options)), Clauses) :-
+    \+ current_prolog_flag(xref, true),
     expand_openapi(File, Options, Clauses).

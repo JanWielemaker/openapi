@@ -1,7 +1,7 @@
 :- use_module(library(http/thread_httpd)).
 :- use_module(prolog/openapi).
 
-:- openapi(petstore, []).
+:- openapi('examples/petstore', []).
 
 server(Port) :-
     http_server(openapi_dispatch,
