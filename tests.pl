@@ -8,5 +8,17 @@ server(Port) :-
                 [ port(Port)
                 ]).
 
-listPets(_Limit, Pets) :-
-    Pets = [p1, p2, p3].
+:- dynamic
+    pet/2.                                      % ?Id, ?Name
+
+listPets(Limit, Pets) :-
+    api_default(Limit, 100),
+    findnsols(Limit, _{id:Id, name:Name}, pet(Id, Name), Pets).
+
+createPets(Pets, status(201)) :-
+    forall(member(Pet, Pets),
+           create_pet(Pet)).
+
+create_pet(Pet) :-
+    _{id:Id, name:Name} :< Pet,
+    assert(pet(Id, Name)).
