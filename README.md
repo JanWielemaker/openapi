@@ -54,3 +54,7 @@ Q: How should we represent the parameters?  Options:
 
   - Compile schemas to a test predicate
   - Provide schema validator against generated dict.
+
+## Binding
+
+  - openapi(:Request) provides the generic handler
