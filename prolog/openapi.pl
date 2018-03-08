@@ -35,6 +35,9 @@
 :- module(openapi,
           [ openapi_dispatch/1,                 % :Request
             openapi/2,                          % +File, +Options
+
+            api_default/2,                      % Var, Default
+
             openapi_read/2                      % +File, -Term
           ]).
 :- use_module(library(debug)).
@@ -64,6 +67,14 @@ expand_openapi(File, Options, Clauses) :-
                        ]),
     openapi_read(Path, JSONTerm),
     phrase(openapi_clauses(JSONTerm, Options), Clauses).
+
+%!  api_default(+Param, +Default) is det.
+
+api_default(Param, Default) :-
+    (   var(Param)
+    ->  Param = Default
+    ;   true
+    ).
 
 %!  openapi_read(+File, -Term) is det.
 %
@@ -116,23 +127,26 @@ path_clause(Path-Spec) -->
 
 path_handlers([], _Path) --> [].
 path_handlers([Method-Spec|T], Path) -->
-    { path_handler(Path, Method, Spec, PathList, Request, Result, Handler) },
-    [ openapi_handler(PathList, Request, Result, Handler) ],
+    { path_handler(Path, Method, Spec, PathList, Request, Content, Result,
+                   Handler)
+    },
+    [ openapi_handler(Method, PathList, Request, Content, Result, Handler) ],
     path_handlers(T, Path).
 
-%! path_handler(+Path, +Method, +Spec, -PathList, -Request, ?Result,
-%!              -Handler) is det.
+%! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
+%!		?Result, -Handler) is det.
 
-path_handler(Path, _Method, Spec, PathList, Request, Result, Handler) :-
-%   assertion(Method == get),
+path_handler(Path, Method, Spec, PathList, Request, Content, Result, Handler) :-
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
     ->  parameters(ParamSpecs, PathBindings, Request, Params)
     ;   assertion(PathBindings == []),          % TBD: Proper message
-        Params = []
+        Params = [],
+        Request = []
     ),
-    append(Params, [Result], AllParams),
+    content_parameter(Method, Spec, Content, Params, Params1),
+    append(Params1, [Result], AllParams),
     atom_string(PredName, Spec.operationId),
     Handler =.. [PredName|AllParams].
 
@@ -191,6 +205,24 @@ path_vars([H0|T0], [H|T], [Name=H|BT]) :-
 path_vars([H|T0], [H|T], Bindings) :-
     path_vars(T0, T, Bindings).
 
+%! content_parameter(+Method, +Spec, -Content, +Params0, -Params) is
+%! det.
+%
+%   @tbd The post may contain requestBody that specifies the content
+%   type and optional schema.
+
+content_parameter(Method, Spec, content(Type, Var), Params, AllParams) :-
+    has_content(Method),
+    !,
+    body_content_type(Spec, Type),
+    append(Params, [Var], AllParams).
+content_parameter(_, _, -, Params, Params).
+
+has_content(post).
+has_content(put).
+
+body_content_type(_Spec, 'application/json').
+
 
 		 /*******************************
 		 *          DISPATCHER		*
@@ -207,12 +239,28 @@ path_vars([H|T0], [H|T], Bindings) :-
 
 openapi_dispatch(M:Request) :-
     memberchk(path(FullPath), Request),
+    memberchk(method(Method), Request),
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
-    M:openapi_handler(Parts, RequestParams, Result, Handler),
+    M:openapi_handler(Method, Parts, RequestParams, Content, Result, Handler),
     http_parameters(Request, RequestParams),
+    request_body(Content, Request),
     call(M:Handler),
+    openapi_reply(Result).
+
+request_body(-, _).
+request_body(content('application/json', Body), Request) :-
+    http_read_json_dict(Request, Body).
+
+%!  openapi_reply(+Reply) is det.
+%
+%   Formulate the HTTP request from a term.
+
+openapi_reply(status(Status)) :-
+    !,
+    format('Status: ~d~n~n', [Status]).
+openapi_reply(Result) :-
     reply_json_dict(Result).
 
 
