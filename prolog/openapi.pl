@@ -280,38 +280,35 @@ openapi_reply(Result) :-
 		 *            TYPES		*
 		 *******************************/
 
-%!  api_type(?Name, ?Type, ?Format)
+%!  api_type(?Name, ?Type, ?Format, ?TypeID)
 %
 %   The formats defined by the OAS are:
 
-api_type(integer,  integer, int32).
-api_type(long,     integer, int64).
-api_type(float,    number,  float).
-api_type(double,   number,  double).
-api_type(string,   string,  -).
-api_type(byte,     string,  byte).
-api_type(binary,   string,  binary).
-api_type(boolean,  boolean, -).
-api_type(date,     string,  date).
-api_type(dateTime, string,  'date-time').
-api_type(password, string,  password).
+api_type(integer,  integer,    int32,       int32).
+api_type(long,     integer,    int64,       int64).
+api_type(long,     integer,    -,           integer).
+api_type(float,    number,     float,       float).
+api_type(double,   number,     double,      float).
+api_type(double,   number,     -,           float).
+api_type(string,   string,     -,           string).
+api_type(byte,     string,     byte,        base64).
+api_type(binary,   string,     binary,      binary).
+api_type(boolean,  boolean,    -,           boolean).
+api_type(date,     string,     date,        date).
+api_type(dateTime, string,     'date-time', date_time).
+api_type(password, string,     password,    password).
 
 %!  oas_type(+Type, ?In, ?Out) is det.
 
 oas_type(int32, In, Out) :-
     cvt_integer(In, Out),
     must_be(between(-2147483648, 2147483647), Out).
-oas_type(int32, In, Out) :-
+oas_type(int64, In, Out) :-
     cvt_integer(In, Out),
     must_be(between(-9223372036854775808, 9223372036854775807), Out).
+oas_type(integer, In, Out) :-
+    cvt_integer(In, Out).
 oas_type(float, In, Out) :-
-    (   nonvar(In)
-    ->  cvt_number(In, Out0),
-        Out is float(Out0)
-    ;   cvt_number(In0, Out),
-        In is float(In0)
-    ).
-oas_type(double, In, Out) :-
     (   nonvar(In)
     ->  cvt_number(In, Out0),
         Out is float(Out0)
@@ -328,7 +325,7 @@ oas_type(binary, In, Out) :-
     ->  to_string(Out, In)
     ;   to_string(In, Out)
     ).
-oas_type(byte, In, Out) :-
+oas_type(base64, In, Out) :-
     base64(In, Out).
 oas_type(boolean, In, Out) :-
     (   nonvar(In)
@@ -337,7 +334,7 @@ oas_type(boolean, In, Out) :-
     ).
 oas_type(date, In, Out) :-
     xsd_time_string(In, 'http://www.w3.org/2001/XMLSchema#date', Out).
-oas_type('date-time', In, Out) :-
+oas_type(date_time, In, Out) :-
     xsd_time_string(In, 'http://www.w3.org/2001/XMLSchema#dateTime', Out).
 oas_type(password, In, Out) :-
     (   var(In)
@@ -451,11 +448,40 @@ schema_clause(Schema-Spec) -->
     [ openapi:json_schema(Schema, Type) ].
 
 schema_type(Spec, object(Props)) :-
-    _{required:Req, properties:Props} :< Spec,
-    dict_pairs(Props, _, Pairs),
+    _{required:ReqS, properties:PropSpecs} :< Spec,
+    !,
+    dict_pairs(PropSpecs, _, Pairs),
+    maplist(atom_string, Req, ReqS),
     maplist(schema_property(Req), Pairs, Props).
+schema_type(Spec, array(Type)) :-
+    _{type:"array", items:IType} :< Spec,
+    !,
+    json_type(IType, Type).
+schema_type(Spec, Type) :-
+    json_type(Spec, Type).
 
+schema_property(Reqs, Name-Spec, p(Name, Type, Req)) :-
+    (   memberchk(Name, Reqs)
+    ->  Req = true
+    ;   Req = false
+    ),
+    json_type(Spec, Type).
 
+json_type(Spec, Type) :-
+    _{type:TypeS, format:FormatS} :< Spec,
+    !,
+    atom_string(Type0, TypeS),
+    atom_string(Format, FormatS),
+    once(api_type(_, Type0, Format, Type)).
+json_type(Spec, Type) :-
+    _{type:TypeS} :< Spec,
+    !,
+    atom_string(Type0, TypeS),
+    once(api_type(_, Type0, -, Type)).
+json_type(Spec, url(URL)) :-
+    _{'$ref':URLS} :< Spec,
+    !,
+    atom_concat('#/components/schemas/', URL, URLS).
 
 
 		 /*******************************
