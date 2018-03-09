@@ -115,7 +115,13 @@ openapi_clauses(JSONTerm, _Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
     root_clause(JSONTerm.servers),
-    path_clauses(Paths).
+    path_clauses(Paths),
+    (   { Schemas = JSONTerm.get(components).get(schemas),
+          dict_pairs(Schemas, _, SchemaPairs)
+        }
+    ->  schema_clauses(SchemaPairs)
+    ;   []
+    ).
 
 root_clause([Server|_]) -->
     { uri_components(Server.url, Components),
@@ -141,7 +147,8 @@ path_handlers([Method-Spec|T], Path) -->
 %! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
 %!		?Result, -Handler) is det.
 
-path_handler(Path, Method, Spec, PathList, Request, Content, Result, Handler) :-
+path_handler(Path, Method, Spec, PathList, Request, Content, Result,
+             Handler) :-
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
@@ -248,7 +255,8 @@ openapi_dispatch(M:Request) :-
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
-    M:openapi_handler(Method, Parts, RequestParams, Content, Result, Handler),
+    M:openapi_handler(Method, Parts, RequestParams, Content, Result,
+                      Handler),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
     call(M:Handler),
@@ -430,6 +438,24 @@ obj_property_out(Out, p(Name, Type, false), In) :-
 
 :- multifile
     json_schema/2.
+
+%!  schema_clauses(+Spec)//
+%
+%   Compile the OpenAPI schema definitions into json_schema/2 clauses.
+
+schema_clauses([]) --> [].
+schema_clauses([H|T]) --> schema_clause(H), schema_clauses(T).
+
+schema_clause(Schema-Spec) -->
+    { schema_type(Spec, Type) },
+    [ openapi:json_schema(Schema, Type) ].
+
+schema_type(Spec, object(Props)) :-
+    _{required:Req, properties:Props} :< Spec,
+    dict_pairs(Props, _, Pairs),
+    maplist(schema_property(Req), Pairs, Props).
+
+
 
 
 		 /*******************************
