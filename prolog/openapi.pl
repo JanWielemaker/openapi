@@ -122,7 +122,7 @@ openapi_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
     root_clause(JSONTerm.servers),
-    path_clauses(Paths),
+    path_clauses(Paths, Options),
     (   { Schemas = JSONTerm.get(components).get(schemas),
           dict_pairs(Schemas, _, SchemaPairs)
         }
@@ -136,30 +136,32 @@ root_clause([Server|_]) -->
     },
     [ openapi_root(Root) ].
 
-path_clauses([]) --> [].
-path_clauses([H|T]) --> path_clause(H), path_clauses(T).
+path_clauses([], _) --> [].
+path_clauses([H|T], Options) -->
+    path_clause(H, Options),
+    path_clauses(T, Options).
 
-path_clause(Path-Spec) -->
+path_clause(Path-Spec, Options) -->
     { dict_pairs(Spec, _, Methods) },
-    path_handlers(Methods, Path).
+    path_handlers(Methods, Path, Options).
 
-path_handlers([], _Path) --> [].
-path_handlers([Method-Spec|T], Path) -->
+path_handlers([], _Path, _) --> [].
+path_handlers([Method-Spec|T], Path, Options) -->
     { path_handler(Path, Method, Spec, PathList, Request, Content, Result,
-                   Handler)
+                   Handler, Options)
     },
     [ openapi_handler(Method, PathList, Request, Content, Result, Handler) ],
-    path_handlers(T, Path).
+    path_handlers(T, Path, Options).
 
 %! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
 %!		?Result, -Handler) is det.
 
 path_handler(Path, Method, Spec, PathList, Request, Content, Result,
-             Handler) :-
+             Handler, Options) :-
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
-    ->  parameters(ParamSpecs, PathBindings, Request, Params)
+    ->  parameters(ParamSpecs, PathBindings, Request, Params, Options)
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
         Request = []
@@ -169,15 +171,15 @@ path_handler(Path, Method, Spec, PathList, Request, Content, Result,
     atom_string(PredName, Spec.operationId),
     Handler =.. [PredName|AllParams].
 
-parameters([], _, [], []).
-parameters([H|T], PathB, [R0|Req], [P0|Ps]) :-
+parameters([], _, [], [], _).
+parameters([H|T], PathB, [R0|Req], [P0|Ps], Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
-    phrase(http_param_options(H), Opts),
+    phrase(http_param_options(H, Options), Opts),
     atom_string(Name, NameS),
     R0 =.. [Name,P0,Opts],
-    parameters(T, PathB, Req, Ps).
-parameters([H|T], PathB, Req, [P0|Ps]) :-
+    parameters(T, PathB, Req, Ps, Options).
+parameters([H|T], PathB, Req, [P0|Ps], Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
@@ -185,14 +187,14 @@ parameters([H|T], PathB, Req, [P0|Ps]) :-
     ->  true                                    % TBD: type conversion
     ;   existence_error(path_parameter, Name)
     ),
-    parameters(T, PathB, Req, Ps).
-parameters([H|_], _PathB, _Req, _) :-
+    parameters(T, PathB, Req, Ps, Options).
+parameters([H|_], _PathB, _Req, _, _) :-
     print_message(error, openapi(parameter_failed(H))),
     fail.
 
-http_param_options(Spec) -->
+http_param_options(Spec, Options) -->
     hp_optional(Spec),
-    hp_type(Spec).
+    hp_type(Spec, Options).
 
 hp_optional(Spec) -->
     { Spec.get(required) == false },
@@ -200,19 +202,14 @@ hp_optional(Spec) -->
     [optional(true)].
 hp_optional(_) --> [].
 
-hp_type(Spec) -->
-    hp_schema(Spec.get(schema)),
+hp_type(Spec, Options) -->
+    hp_schema(Spec.get(schema), Options),
     !.
-hp_type(_) --> [].
+hp_type(_, _) --> [].
 
-hp_schema(Spec) -->
-    { _{type:Type,format:Format} :< Spec },
-    hp_type_format(Type, Format).
-
-hp_type_format("integer", _) --> [ integer ].
-hp_type_format("number", _)  --> [ float ].
-hp_type_format("boolean", _) --> [ boolean ].
-hp_type_format("string", _) -->  [ string ].
+hp_schema(Spec, Options) -->
+    { json_type(Spec, Type, Options) },
+    [ openapi(Type) ].
 
 %!  path_vars(+SegmentSpec, -Segments, -Bindings) is det.
 
@@ -429,6 +426,12 @@ obj_property_out(Out, p(Name, Type, false), In) :-
     ->  json_check(Type, In, OutV)
     ;   In = (-)
     ).
+
+:- multifile
+    http:convert_parameter/3.
+
+http:convert_parameter(openapi(Type), In, Out) :-
+    json_check(Type, In, Out).
 
 %!  json_schema(URL, Spec)
 %
