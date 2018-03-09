@@ -41,6 +41,9 @@
             openapi_read/2                      % +File, -Term
           ]).
 :- use_module(library(debug)).
+:- use_module(library(error)).
+:- use_module(library(base64)).
+:- use_module(library(sgml)).
 :- use_module(library(lists)).
 :- use_module(library(process)).
 :- use_module(library(uri)).
@@ -263,17 +266,114 @@ openapi_reply(status(Status)) :-
 openapi_reply(Result) :-
     reply_json_dict(Result).
 
-
-
-		 /*******************************
-		 *           BIND HTTP		*
-		 *******************************/
-
-
 		 /*******************************
 		 *            TYPES		*
 		 *******************************/
 
+%!  api_type(?Name, ?Type, ?Format)
+%
+%   The formats defined by the OAS are:
+
+api_type(integer,  integer, int32).
+api_type(long,     integer, int64).
+api_type(float,    number,  float).
+api_type(double,   number,  double).
+api_type(string,   string,  -).
+api_type(byte,     string,  byte).
+api_type(binary,   string,  binary).
+api_type(boolean,  boolean, -).
+api_type(date,     string,  date).
+api_type(dateTime, string,  'date-time').
+api_type(password, string,  password).
+
+%!  oas_type(+Type, ?In, ?Out) is det.
+
+oas_type(int32, In, Out) :-
+    cvt_integer(In, Out),
+    must_be(between(-2147483648, 2147483647), Out).
+oas_type(int32, In, Out) :-
+    cvt_integer(In, Out),
+    must_be(between(-9223372036854775808, 9223372036854775807), Out).
+oas_type(float, In, Out) :-
+    (   nonvar(In)
+    ->  cvt_number(In, Out0),
+        Out is float(Out0)
+    ;   cvt_number(In0, Out),
+        In is float(In0)
+    ).
+oas_type(double, In, Out) :-
+    (   nonvar(In)
+    ->  cvt_number(In, Out0),
+        Out is float(Out0)
+    ;   cvt_number(In0, Out),
+        In is float(In0)
+    ).
+oas_type(string, In, Out) :-
+    (   var(In)
+    ->  to_string(Out, In)
+    ;   to_atom(In, Out)
+    ).
+oas_type(binary, In, Out) :-
+    (   var(In)
+    ->  to_string(Out, In)
+    ;   to_string(In, Out)
+    ).
+oas_type(byte, In, Out) :-
+    base64(In, Out).
+oas_type(boolean, In, Out) :-
+    (   nonvar(In)
+    ->  to_boolean(Out, In)
+    ;   to_boolean(In, Out)
+    ).
+oas_type(date, In, Out) :-
+    xsd_time_string(In, 'http://www.w3.org/2001/XMLSchema#date', Out).
+oas_type('date-time', In, Out) :-
+    xsd_time_string(In, 'http://www.w3.org/2001/XMLSchema#dateTime', Out).
+oas_type(password, In, Out) :-
+    (   var(In)
+    ->  to_string(Out, In)
+    ;   to_string(In, Out)
+    ).
+
+cvt_integer(In, Out) :-
+    cvt_number(In, Out),
+    must_be(integer, Out).
+
+cvt_number(In, Out) :- nonvar(In), !, to_number(In, Out).
+cvt_number(N, N)    :- must_be(number, N).
+
+to_number(In, Out) :-
+    (   number(In)
+    ->  Out = In
+    ;   atom_number(In, Out0)
+    ->  Out = Out0
+    ;   type_error(number, In)
+    ).
+
+to_string(Val, String) :-
+    atom_string(Val, String).
+
+to_atom(Val, Atom) :-
+    atom_string(Atom, Val).
+
+to_boolean(Var, _) :-
+    var(Var),
+    !,
+    instantiation_error(Var).
+to_boolean(false, false).
+to_boolean(true,  true).
+to_boolean(0,     false).
+to_boolean(1,     true).
+to_boolean(no,    false).
+to_boolean(yes,   true).
+to_boolean(off,   false).
+to_boolean(on,    true).
+
+
+
+		 /*******************************
+		 *        ENABLE EXPANSION	*
+		 *******************************/
 
 :- multifile
     system:term_expansion/2.
