@@ -13,7 +13,7 @@ server(Port) :-
 
 listPets(Limit, Pets) :-
     api_default(Limit, 100),
-    findnsols(Limit, _{id:Id, name:Name}, pet(Id, Name), Pets).
+    once(findnsols(Limit, _{id:Id, name:Name}, pet(Id, Name), Pets)).
 
 createPets(Pets, status(201)) :-
     forall(member(Pet, Pets),
