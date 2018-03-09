@@ -21,40 +21,28 @@ defined to make the service work.
 
     :- openapi(+OpenAPIFile, +Options).
 
-## Parameters
+## The handler
 
-Parameters for REST APIs come from multiple sources:
-
-  - Path parameters
-  - HTTP query parameters
-    - Q: The HTTP protocol allows for repeating the same parameter.
-      It is rearely used, but is it allowed by OpenAPI?
-  - Header parameters
-
-All are in the parameters declaration.
-
-Q: How should we represent the parameters?  Options:
-
-  - By position?
-    - What position?  Path/Params/Header?  The generated skeleton
-      could reveal that to the user.
-    - How to deal with optional params?  Pass a variable?
-  - As a single dict?
-    - Provides access by name
-    - Optional parameters are not in the dict
+  - Predicate name from `operationId`
+  - Followed by translated versions from `parameters`
+  - If a POST or PUT, follow by translated content
+  - Followed by response.  See below.
 
 ## Response
 
-  - Returned object
+  - Returned object, one of
+    - `status(+Status)`
+    - `json(+Term)`
+    - ...
   - Throw exception.
     - Need mapping of exceptions to error documents
     - Need mapping of errors from the body to above error documents
 
 ## Schema handling
 
-  - Compile schemas to a test predicate
+  - Compile schemas to clauses for a validation predicate
   - Provide schema validator against generated dict.
 
 ## Binding
 
-  - openapi(:Request) provides the generic handler
+  - openapi_dispatch(:Request) provides the generic handler
