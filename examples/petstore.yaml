@@ -5,7 +5,7 @@ info:
   license:
     name: MIT
 servers:
-  - url: http://petstore.swagger.io/v1
+  - url: http://localhost:5000/v1
 paths:
   /pets:
     get:
@@ -30,7 +30,7 @@ paths:
               schema:
                 type: string
           content:
-            application/json:    
+            application/json:
               schema:
                 $ref: "#/components/schemas/Pets"
         default:
@@ -44,6 +44,13 @@ paths:
       operationId: createPets
       tags:
         - pets
+      requestBody:
+        description: Pet to add to the store
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pets'
       responses:
         '201':
           description: Null response
