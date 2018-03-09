@@ -41,8 +41,9 @@
             openapi_read/2                      % +File, -Term
           ]).
 :- use_module(library(apply)).
-:- use_module(library(apply_macros)).
+:- use_module(library(apply_macros), []).
 :- use_module(library(debug)).
+:- use_module(library(option)).
 :- use_module(library(error)).
 :- use_module(library(base64)).
 :- use_module(library(sgml)).
@@ -70,8 +71,10 @@ expand_openapi(File, Options, Clauses) :-
                          extensions(['',json,yaml]),
                          access(read)
                        ]),
+    uri_file_name(BaseURI, Path),
     openapi_read(Path, JSONTerm),
-    phrase(openapi_clauses(JSONTerm, Options), Clauses).
+    merge_options(Options, [base_uri(BaseURI)], Options1),
+    phrase(openapi_clauses(JSONTerm, Options1), Clauses).
 
 %!  api_default(+Param, +Default) is det.
 
@@ -109,9 +112,13 @@ openapi_read(File, Term) :-
 
 %!  openapi_clauses(+JSONTerm, +Options)//
 %
-%   Grammar to generate clauses that control openapi/1.
+%   Grammar to generate clauses that control openapi/1.  Options
+%   processed:
+%
+%     - base_uri(+URI)
+%       Base URI for resolving types.
 
-openapi_clauses(JSONTerm, _Options) -->
+openapi_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
     root_clause(JSONTerm.servers),
@@ -119,7 +126,7 @@ openapi_clauses(JSONTerm, _Options) -->
     (   { Schemas = JSONTerm.get(components).get(schemas),
           dict_pairs(Schemas, _, SchemaPairs)
         }
-    ->  schema_clauses(SchemaPairs)
+    ->  schema_clauses(SchemaPairs, Options)
     ;   []
     ).
 
@@ -436,52 +443,60 @@ obj_property_out(Out, p(Name, Type, false), In) :-
 :- multifile
     json_schema/2.
 
-%!  schema_clauses(+Spec)//
+%!  schema_clauses(+Spec, +Options)//
 %
 %   Compile the OpenAPI schema definitions into json_schema/2 clauses.
 
-schema_clauses([]) --> [].
-schema_clauses([H|T]) --> schema_clause(H), schema_clauses(T).
+schema_clauses([], _) --> [].
+schema_clauses([H|T], Options) -->
+    schema_clause(H, Options),
+    schema_clauses(T, Options).
 
-schema_clause(Schema-Spec) -->
-    { schema_type(Spec, Type) },
-    [ openapi:json_schema(Schema, Type) ].
+schema_clause(Schema-Spec, Options) -->
+    { schema_type(Spec, Type, Options),
+      option(base_uri(Base), Options),
+      file_directory_name(Base, Dir),
+      atomic_list_concat([Dir, '#/components/schemas/', Schema], URL)
+    },
+    [ openapi:json_schema(URL, Type) ].
 
-schema_type(Spec, object(Props)) :-
+schema_type(Spec, object(Props), Options) :-
     _{required:ReqS, properties:PropSpecs} :< Spec,
     !,
     dict_pairs(PropSpecs, _, Pairs),
     maplist(atom_string, Req, ReqS),
-    maplist(schema_property(Req), Pairs, Props).
-schema_type(Spec, array(Type)) :-
+    maplist(schema_property(Req, Options), Pairs, Props).
+schema_type(Spec, array(Type), Options) :-
     _{type:"array", items:IType} :< Spec,
     !,
-    json_type(IType, Type).
-schema_type(Spec, Type) :-
-    json_type(Spec, Type).
+    json_type(IType, Type, Options).
+schema_type(Spec, Type, Options) :-
+    json_type(Spec, Type, Options).
 
-schema_property(Reqs, Name-Spec, p(Name, Type, Req)) :-
+schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
     (   memberchk(Name, Reqs)
     ->  Req = true
     ;   Req = false
     ),
-    json_type(Spec, Type).
+    json_type(Spec, Type, Options).
 
-json_type(Spec, Type) :-
+json_type(Spec, Type, _) :-
     _{type:TypeS, format:FormatS} :< Spec,
     !,
     atom_string(Type0, TypeS),
     atom_string(Format, FormatS),
     once(api_type(_, Type0, Format, Type)).
-json_type(Spec, Type) :-
+json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
     !,
     atom_string(Type0, TypeS),
     once(api_type(_, Type0, -, Type)).
-json_type(Spec, url(URL)) :-
+json_type(Spec, url(URL), Options) :-
     _{'$ref':URLS} :< Spec,
     !,
-    atom_concat('#/components/schemas/', URL, URLS).
+    option(base_uri(Base), Options),
+    file_directory_name(Base, Dir),
+    atom_concat(Dir, URLS, URL).
 
 
 		 /*******************************
