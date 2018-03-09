@@ -209,8 +209,10 @@ hp_schema(Spec) -->
     { _{type:Type,format:Format} :< Spec },
     hp_type_format(Type, Format).
 
-hp_type_format(integer, _) -->
-    [ integer ].
+hp_type_format("integer", _) --> [ integer ].
+hp_type_format("number", _)  --> [ float ].
+hp_type_format("boolean", _) --> [ boolean ].
+hp_type_format("string", _) -->  [ string ].
 
 %!  path_vars(+SegmentSpec, -Segments, -Bindings) is det.
 
