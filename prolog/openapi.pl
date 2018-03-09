@@ -34,7 +34,7 @@
 
 :- module(openapi,
           [ openapi_dispatch/1,                 % :Request
-            openapi/2,                          % +File, +Options
+            openapi_server/2,                   % +File, +Options
 
             api_default/2,                      % Var, Default
 
@@ -57,14 +57,14 @@
 :- meta_predicate
     openapi_dispatch(:).
 
-%!  openapi(+File, +Options)
+%!  openapi_server(+File, +Options)
 %
 %
 
-openapi(File, Options) :-
+openapi_server(File, Options) :-
     throw(error(context_error(nodirective, openapi(File, Options)), _)).
 
-expand_openapi(File, Options, Clauses) :-
+expand_openapi_server(File, Options, Clauses) :-
     prolog_load_context(directory, Dir),
     absolute_file_name(File, Path,
                        [ relative_to(Dir),
@@ -587,6 +587,6 @@ json_type(Spec, url(URL), Options) :-
 :- multifile
     system:term_expansion/2.
 
-system:term_expansion((:- openapi(File, Options)), Clauses) :-
+system:term_expansion((:- openapi_server(File, Options)), Clauses) :-
     \+ current_prolog_flag(xref, true),
-    expand_openapi(File, Options, Clauses).
+    expand_openapi_server(File, Options, Clauses).
