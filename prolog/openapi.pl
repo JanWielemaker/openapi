@@ -40,6 +40,8 @@
 
             openapi_read/2                      % +File, -Term
           ]).
+:- use_module(library(apply)).
+:- use_module(library(apply_macros)).
 :- use_module(library(debug)).
 :- use_module(library(error)).
 :- use_module(library(base64)).
@@ -369,6 +371,65 @@ to_boolean(yes,   true).
 to_boolean(off,   false).
 to_boolean(on,    true).
 
+%!  json_check(+Spec, ?JSONIn, ?JSONOut)
+%
+%   Validate a JSON object.
+
+json_check(url(URL), In, Out) :-
+    !,
+    json_schema(URL, Type),
+    json_check(Type, In, Out).
+json_check(object(Properties), In, Out) :-
+    !,
+    (   nonvar(In)
+    ->  maplist(obj_property_in(In), Properties, Pairs0),
+        exclude(==(-), Pairs0, Pairs),
+        dict_pairs(Out, _, Pairs)
+    ;   maplist(obj_property_out(Out), Properties, Pairs0),
+        exclude(==(-), Pairs0, Pairs),
+        dict_pairs(In, _, Pairs)
+    ).
+json_check(array(Type), In, Out) :-
+    !,
+    (   is_list(In)
+    ->  maplist(json_check(Type), In, Out)
+    ;   is_list(Out)
+    ->  maplist(json_check(Type), In, Out)
+    ;   must_be(list, In)
+    ).
+json_check(Type, In, Out) :-
+    oas_type(Type, In, Out).
+
+obj_property_in(In, p(Name, Type, true), Out) :-
+    json_check(Type, In.Name, Out).
+obj_property_in(In, p(Name, Type, false), Out) :-
+    (   InV = In.get(Name)
+    ->  json_check(Type, InV, Out)
+    ;   Out = (-)
+    ).
+
+obj_property_out(Out, p(Name, Type, true), In) :-
+    json_check(Type, In, Out.Name).
+obj_property_out(Out, p(Name, Type, false), In) :-
+    (   OutV = Out.get(Name)
+    ->  json_check(Type, In, OutV)
+    ;   In = (-)
+    ).
+
+%!  json_schema(URL, Spec)
+%
+%   Spec is one of
+%
+%     - array(ItemType)
+%     - object(Properties)
+%       Properties is a list of
+%       - p(Name, Type, Required)
+%     - A type as defined by oas_type/3.
+%     - url(URL)
+%       Reference to another type.
+
+:- multifile
+    json_schema/2.
 
 
 		 /*******************************
