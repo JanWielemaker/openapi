@@ -156,7 +156,8 @@ path_handlers([Method-Spec|T], Path, Options) -->
 %! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
 %!		?Result, -Handler) is det.
 
-path_handler(Path, Method, Spec, PathList, Request, Content, Result,
+path_handler(Path, Method, Spec, PathList, Request,
+             Content, Responses,
              Handler, Options) :-
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
@@ -168,6 +169,8 @@ path_handler(Path, Method, Spec, PathList, Request, Content, Result,
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     append(Params1, [Result], AllParams),
+    dict_pairs(Spec.responses, _, ResPairs),
+    maplist(response(Result, Options), ResPairs, Responses),
     atom_string(PredName, Spec.operationId),
     Handler =.. [PredName|AllParams].
 
@@ -233,22 +236,40 @@ content_parameter(Method, Spec, content(MediaType, Schema, Var),
                   Params, AllParams, Options) :-
     has_content(Method),
     !,
-    body_content_type(Spec, MediaType, Schema, Options),
+    request_content_type(Spec, MediaType, Schema, Options),
     append(Params, [Var], AllParams).
 content_parameter(_, _, -, Params, Params, _).
 
 has_content(post).
 has_content(put).
 
-body_content_type(Spec, 'application/json', Type, Options) :-
-    Content = Spec.get(requestBody).get(content),
+request_content_type(Spec, MediaType, Schema, Options) :-
+    (   Body = Spec.get(requestBody)
+    ->  true
+    ;   Body = _{}
+    ),
+    !,
+    content_type(Body, MediaType, Schema, Options).
+
+%!  response(+ResultVar, +Options, +ResponsePair, -Response) is det.
+
+response(Result, Options, CodeA-Spec, response(Code, MediaType, Type, Result)) :-
+    response_code(CodeA, Code),
+    content_type(Spec, MediaType, Type, Options).
+
+response_code(default, _) :- !.
+response_code(A, N) :-
+    to_number(A, N).
+
+content_type(Spec, 'application/json', Type, Options) :-
+    Content = Spec.get(content),
     Media = Content.get('application/json'),
     !,
     (   Schema = Media.get(schema)
     ->  json_type(Schema, Type, Options)
     ;   Type = (-)
     ).
-body_content_type(_Spec, 'application/json', -, _).
+content_type(_Spec, 'application/json', -, _).
 
 
 		 /*******************************
@@ -270,12 +291,12 @@ openapi_dispatch(M:Request) :-
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
-    M:openapi_handler(Method, Parts, RequestParams, Content, Result,
+    M:openapi_handler(Method, Parts, RequestParams, Content, Responses,
                       Handler),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
     call(M:Handler),
-    openapi_reply(Result).
+    openapi_reply(Responses).
 
 %!  request_body(+ContentSpec, +Request) is det.
 %
@@ -289,15 +310,38 @@ request_body(content('application/json', Type, Body), Request) :-
     http_read_json_dict(Request, Body0),
     json_check(Type, Body0, Body).
 
-%!  openapi_reply(+Reply) is det.
+%!  openapi_reply(+Responses) is det.
 %
 %   Formulate the HTTP request from a term.
+%
+%   @arg Responses is a list response(Code, MediaType, Type, Reply),
+%   where `Reply` is the variable that is bound by the use handler.
 
-openapi_reply(status(Status)) :-
+openapi_reply(Responses) :-
+    Responses = [R0|_],
+    arg(4, R0, Reply),
+    reply_status(Reply, Code, Data),
+    memberchk(response(Code, MediaType, Type, _), Responses),
+    openapi_reply(Code, MediaType, Type, Data).
+
+reply_status(Var, _, _) :-
+    var(Var), !,
+    instantiation_error(Var).
+reply_status(status(Code, Data), Code, Data) :- !.
+reply_status(status(Code), Code, '') :- !.
+reply_status(Data, 200, Data).
+
+openapi_reply(Code, 'application/json', -, Data) :-
     !,
-    format('Status: ~d~n~n', [Status]).
-openapi_reply(Result) :-
-    reply_json_dict(Result).
+    reply_json_dict(Data, [status(Code)]).
+openapi_reply(Code, 'application/json', Type, Data) :-
+    !,
+    json_check(Type, Out, Data),
+    reply_json_dict(Out, [status(Code)]).
+openapi_reply(Code, MediaType, _, '') :-
+    format('Status: ~d~n', [Code]),
+    format('Content-type: ~w~n~n', [MediaType]).
+
 
 		 /*******************************
 		 *            TYPES		*
@@ -444,11 +488,13 @@ obj_property_in(In, p(Name, Type, false), Out) :-
     ;   Out = (-)
     ).
 
-obj_property_out(Out, p(Name, Type, true), In) :-
+obj_property_out(Out, p(Name, Type, true), Name-In) :-
+    !,
     json_check(Type, In, Out.Name).
 obj_property_out(Out, p(Name, Type, false), In) :-
     (   OutV = Out.get(Name)
-    ->  json_check(Type, In, OutV)
+    ->  json_check(Type, InV, OutV),
+        In = (Name-InV)
     ;   In = (-)
     ).
 
