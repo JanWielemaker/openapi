@@ -166,7 +166,7 @@ path_handler(Path, Method, Spec, PathList, Request, Content, Result,
         Params = [],
         Request = []
     ),
-    content_parameter(Method, Spec, Content, Params, Params1),
+    content_parameter(Method, Spec, Content, Params, Params1, Options),
     append(Params1, [Result], AllParams),
     atom_string(PredName, Spec.operationId),
     Handler =.. [PredName|AllParams].
@@ -223,23 +223,32 @@ path_vars([H0|T0], [H|T], [Name=H|BT]) :-
 path_vars([H|T0], [H|T], Bindings) :-
     path_vars(T0, T, Bindings).
 
-%! content_parameter(+Method, +Spec, -Content, +Params0, -Params) is
-%! det.
+%! content_parameter(+Method, +Spec, -Content,
+%!                   +Params0, -Params, +Options) is det.
 %
 %   @tbd The post may contain requestBody that specifies the content
 %   type and optional schema.
 
-content_parameter(Method, Spec, content(Type, Var), Params, AllParams) :-
+content_parameter(Method, Spec, content(MediaType, Schema, Var),
+                  Params, AllParams, Options) :-
     has_content(Method),
     !,
-    body_content_type(Spec, Type),
+    body_content_type(Spec, MediaType, Schema, Options),
     append(Params, [Var], AllParams).
-content_parameter(_, _, -, Params, Params).
+content_parameter(_, _, -, Params, Params, _).
 
 has_content(post).
 has_content(put).
 
-body_content_type(_Spec, 'application/json').
+body_content_type(Spec, 'application/json', Type, Options) :-
+    Content = Spec.get(requestBody).get(content),
+    Media = Content.get('application/json'),
+    !,
+    (   Schema = Media.get(schema)
+    ->  json_type(Schema, Type, Options)
+    ;   Type = (-)
+    ).
+body_content_type(_Spec, 'application/json', -, _).
 
 
 		 /*******************************
@@ -268,9 +277,17 @@ openapi_dispatch(M:Request) :-
     call(M:Handler),
     openapi_reply(Result).
 
+%!  request_body(+ContentSpec, +Request) is det.
+%
+%   Read the specified request body.
+
 request_body(-, _).
-request_body(content('application/json', Body), Request) :-
+request_body(content('application/json', -, Body), Request) :-
+    !,
     http_read_json_dict(Request, Body).
+request_body(content('application/json', Type, Body), Request) :-
+    http_read_json_dict(Request, Body0),
+    json_check(Type, Body0, Body).
 
 %!  openapi_reply(+Reply) is det.
 %
@@ -373,14 +390,20 @@ to_boolean(Var, _) :-
     var(Var),
     !,
     instantiation_error(Var).
-to_boolean(false, false).
-to_boolean(true,  true).
-to_boolean(0,     false).
-to_boolean(1,     true).
-to_boolean(no,    false).
-to_boolean(yes,   true).
-to_boolean(off,   false).
-to_boolean(on,    true).
+to_boolean(false,   false).
+to_boolean(true,    true).
+to_boolean('FALSE', false).
+to_boolean('TRUE',  true).
+to_boolean(0,       false).
+to_boolean(1,       true).
+to_boolean(no,      false).
+to_boolean(yes,     true).
+to_boolean('NO',    false).
+to_boolean('YES',   true).
+to_boolean(off,     false).
+to_boolean(on,      true).
+to_boolean('OFF',   false).
+to_boolean('ON',    true).
 
 %!  json_check(+Spec, ?JSONIn, ?JSONOut)
 %
@@ -411,11 +434,13 @@ json_check(array(Type), In, Out) :-
 json_check(Type, In, Out) :-
     oas_type(Type, In, Out).
 
-obj_property_in(In, p(Name, Type, true), Out) :-
+obj_property_in(In, p(Name, Type, true), Name-Out) :-
+    !,
     json_check(Type, In.Name, Out).
 obj_property_in(In, p(Name, Type, false), Out) :-
     (   InV = In.get(Name)
-    ->  json_check(Type, InV, Out)
+    ->  json_check(Type, InV, OutV),
+        Out = (Name-OutV)
     ;   Out = (-)
     ).
 
@@ -484,6 +509,11 @@ schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
     ;   Req = false
     ),
     json_type(Spec, Type, Options).
+
+%!  json_type(+Spec, -Type, +Options) is det.
+%
+%   True when Type  is  the  type   representation  for  the  JSON  type
+%   description Spec.
 
 json_type(Spec, Type, _) :-
     _{type:TypeS, format:FormatS} :< Spec,
