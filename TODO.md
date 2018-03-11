@@ -15,6 +15,8 @@
   - Testing
     - Is there a comprehensive test suite?
 
+  - Use URI encode/decode for path parameters
+
 ## Open issues
 
   - How to select a server?  Use with other servers?  Option?
