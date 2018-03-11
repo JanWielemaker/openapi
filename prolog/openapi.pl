@@ -334,15 +334,14 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ),
     Head =.. [PredName|AllParams],
     Body = ( PathGoal,
-             assemble_query(Module, Path, Query, URL),
+             openapi:assemble_query(Module, Path, Query, URL),
              setup_call_cleanup(
                  http_open(URL, In,
                            [ status_code(Status),
                              method(Method)
                            ]),
-                 openapi_read_reply(In, Result),
-                 close(In)),
-             writeln(Status)
+                 openapi:openapi_read_reply(Status, In, Result),
+                 close(In))
            ).
 
 client_parameters([], _, [], [], _).
@@ -372,6 +371,16 @@ assemble_query(Module, Path, Query, URL) :-
     call(Module:openapi_server(ServerBase)),
     uri_query_components(QueryString, Query),
     atomics_to_string([ServerBase, Path, "?", QueryString], URL).
+
+%!  openapi_read_reply(+Code, +In, -Result) is det.
+%
+%   Handle the reply at the client side.
+
+:- public openapi_read_reply/3.
+
+openapi_read_reply(Code, In, Result) :-
+    debug(openapi(reply), 'Got code ~p', [Code]),
+    json_read_dict(In, Result, []).
 
 
 		 /*******************************
