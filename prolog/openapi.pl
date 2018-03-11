@@ -35,6 +35,7 @@
 :- module(openapi,
           [ openapi_dispatch/1,                 % :Request
             openapi_server/2,                   % +File, +Options
+            openapi_client/2,                   % +File, +Options
 
             api_default/2,                      % Var, Default
 
@@ -59,22 +60,25 @@
 
 %!  openapi_server(+File, +Options)
 %
-%
+%   Instantiate a REST server given the OpenAPI specification in File.
 
 openapi_server(File, Options) :-
-    throw(error(context_error(nodirective, openapi(File, Options)), _)).
+    throw(error(context_error(nodirective, openapi_server(File, Options)), _)).
 
 expand_openapi_server(File, Options, Clauses) :-
-    prolog_load_context(directory, Dir),
-    absolute_file_name(File, Path,
-                       [ relative_to(Dir),
-                         extensions(['',json,yaml]),
-                         access(read)
-                       ]),
-    uri_file_name(BaseURI, Path),
-    openapi_read(Path, JSONTerm),
-    merge_options(Options, [base_uri(BaseURI)], Options1),
-    phrase(openapi_clauses(JSONTerm, Options1), Clauses).
+    read_openapi_spec(File, Spec, Options, Options1),
+    phrase(server_clauses(Spec, Options1), Clauses).
+
+%!  openapi_client(+File, +Options)
+%
+%   Instantiate a REST client given the OpenAPI specification in File.
+
+openapi_client(File, Options) :-
+    throw(error(context_error(nodirective, openapi_client(File, Options)), _)).
+
+expand_openapi_client(File, Options, Clauses) :-
+    read_openapi_spec(File, Spec, Options, Options1),
+    phrase(client_clauses(Spec, Options1), Clauses).
 
 %!  api_default(+Param, +Default) is det.
 
@@ -83,6 +87,19 @@ api_default(Param, Default) :-
     ->  Param = Default
     ;   true
     ).
+
+%!  read_openapi_spec(+File, -Spec, +Options0, -Options) is det.
+
+read_openapi_spec(File, Spec, Options0, Options) :-
+    prolog_load_context(directory, Dir),
+    absolute_file_name(File, Path,
+                       [ relative_to(Dir),
+                         extensions(['',json,yaml]),
+                         access(read)
+                       ]),
+    uri_file_name(BaseURI, Path),
+    openapi_read(Path, Spec),
+    merge_options(Options0, [base_uri(BaseURI)], Options).
 
 %!  openapi_read(+File, -Term) is det.
 %
@@ -107,10 +124,10 @@ openapi_read(File, Term) :-
         close(In)).
 
 		 /*******************************
-		 *            COMPILER		*
+		 *       SERVER COMPILER	*
 		 *******************************/
 
-%!  openapi_clauses(+JSONTerm, +Options)//
+%!  server_clauses(+JSONTerm, +Options)//
 %
 %   Grammar to generate clauses that control openapi/1.  Options
 %   processed:
@@ -118,17 +135,12 @@ openapi_read(File, Term) :-
 %     - base_uri(+URI)
 %       Base URI for resolving types.
 
-openapi_clauses(JSONTerm, Options) -->
+server_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
     root_clause(JSONTerm.servers),
-    path_clauses(Paths, Options),
-    (   { Schemas = JSONTerm.get(components).get(schemas),
-          dict_pairs(Schemas, _, SchemaPairs)
-        }
-    ->  schema_clauses(SchemaPairs, Options)
-    ;   []
-    ).
+    server_path_clauses(Paths, Options),
+    json_schema_clauses(JSONTerm, Options).
 
 root_clause([Server|_]) -->
     { uri_components(Server.url, Components),
@@ -136,12 +148,12 @@ root_clause([Server|_]) -->
     },
     [ openapi_root(Root) ].
 
-path_clauses([], _) --> [].
-path_clauses([H|T], Options) -->
-    path_clause(H, Options),
-    path_clauses(T, Options).
+server_path_clauses([], _) --> [].
+server_path_clauses([H|T], Options) -->
+    server_path_clause(H, Options),
+    server_path_clauses(T, Options).
 
-path_clause(Path-Spec, Options) -->
+server_path_clause(Path-Spec, Options) -->
     { dict_pairs(Spec, _, Methods) },
     path_handlers(Methods, Path, Options).
 
@@ -270,6 +282,96 @@ content_type(Spec, 'application/json', Type, Options) :-
     ;   Type = (-)
     ).
 content_type(_Spec, 'application/json', -, _).
+
+		 /*******************************
+		 *       CLIENT COMPILER	*
+		 *******************************/
+
+client_clauses(JSONTerm, Options) -->
+    { dict_pairs(JSONTerm.paths, _, Paths)
+    },
+    server_clauses(JSONTerm.servers),
+    client_path_clauses(Paths, Options),
+    json_schema_clauses(JSONTerm, Options).
+
+server_clauses([]) --> [].
+server_clauses([H|T]) --> server_clause(H), server_clauses(T).
+
+server_clause(Server) -->
+    [ openapi_server(Server.get(url)) ].
+
+client_path_clauses([], _) --> [].
+client_path_clauses([H|T], Options) -->
+    client_path_clause(H, Options),
+    client_path_clauses(T, Options).
+
+client_path_clause(Path-Spec, Options) -->
+    { dict_pairs(Spec, _, Methods) },
+    client_handlers(Methods, Path, Options).
+
+client_handlers([], _, _) --> [].
+client_handlers([H|T], Path, Options) -->
+    { client_handler(H, Path, Clause, Options) },
+    [Clause],
+    client_handlers(T, Path, Options).
+
+client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
+    atomic_list_concat(Parts, '/', PathSpec),
+    path_vars(Parts, PathList, PathBindings),   % TBD: deal with URL encoding
+    atom_string(PredName, Spec.operationId),
+    (   ParamSpecs = Spec.get(parameters)
+    ->  client_parameters(ParamSpecs, PathBindings, Params, Query, Options)
+    ;   assertion(PathBindings == []),          % TBD: Proper message
+        Params = [],
+        Query = []
+    ),
+    append(Params, [Result], AllParams),
+    prolog_load_context(module, Module),
+    (   PathBindings == []
+    ->  Path = PathSpec,
+        PathGoal = true
+    ;   PathGoal = atomic_list_concat(PathList, '/', Path)
+    ),
+    Head =.. [PredName|AllParams],
+    Body = ( PathGoal,
+             assemble_query(Module, Path, Query, URL),
+             setup_call_cleanup(
+                 http_open(URL, In,
+                           [ status_code(Status),
+                             method(Method)
+                           ]),
+                 openapi_read_reply(In, Result),
+                 close(In)),
+             writeln(Status)
+           ).
+
+client_parameters([], _, [], [], _).
+client_parameters([H|T], PathBindings, [P0|Ps], [Name=P0|Qs], Options) :-
+    _{name:NameS, in:"query"} :< H,
+    !,
+    atom_string(Name, NameS),
+    client_parameters(T, PathBindings, Ps, Qs, Options).
+client_parameters([H|T], PathBindings, [P0|Ps], Query, Options) :-
+    _{name:NameS, in:"path"} :< H,
+    !,
+    atom_string(Name, NameS),
+    (   memberchk(Name=P0, PathBindings)
+    ->  true                                    % TBD: type conversion
+    ;   existence_error(path_parameter, Name)
+    ),
+    client_parameters(T, PathBindings, Ps, Query, Options).
+
+:- public
+    assemble_query/4.
+
+assemble_query(Module, Path, [], URL) :-
+    !,
+    call(Module:openapi_server(ServerBase)),
+    atomics_to_string([ServerBase, Path], URL).
+assemble_query(Module, Path, Query, URL) :-
+    call(Module:openapi_server(ServerBase)),
+    uri_query_components(QueryString, Query),
+    atomics_to_string([ServerBase, Path, "?", QueryString], URL).
 
 
 		 /*******************************
@@ -519,7 +621,18 @@ http:convert_parameter(openapi(Type), In, Out) :-
 :- multifile
     json_schema/2.
 
-%!  schema_clauses(+Spec, +Options)//
+%!  json_schema_clauses(+JSONTerm, +Options)//
+
+json_schema_clauses(JSONTerm, Options) -->
+    { Schemas = JSONTerm.get(components).get(schemas),
+      dict_pairs(Schemas, _, SchemaPairs)
+    },
+    !,
+    schema_clauses(SchemaPairs, Options).
+json_schema_clauses(_, _) --> [].
+
+
+%!  schema_clauses(+Specs, +Options)//
 %
 %   Compile the OpenAPI schema definitions into json_schema/2 clauses.
 
@@ -590,3 +703,6 @@ json_type(Spec, url(URL), Options) :-
 system:term_expansion((:- openapi_server(File, Options)), Clauses) :-
     \+ current_prolog_flag(xref, true),
     expand_openapi_server(File, Options, Clauses).
+system:term_expansion((:- openapi_client(File, Options)), Clauses) :-
+    \+ current_prolog_flag(xref, true),
+    expand_openapi_client(File, Options, Clauses).
