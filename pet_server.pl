@@ -23,6 +23,6 @@ create_pet(Pet) :-
     _{id:Id, name:Name} :< Pet,
     assert(pet(Id, Name)).
 
-showPetById(IdA, _{id:Id, name:Name}) :-
+showPetById(IdA, [_{id:Id, name:Name}]) :-
     atom_number(IdA, Id),
     pet(Id, Name).

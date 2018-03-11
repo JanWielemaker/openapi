@@ -3,3 +3,8 @@
 
 :- openapi_client('examples/petstore', []).
 
+%!  listPets(?Limit, -Pets)
+
+%!  createPets(+Pets)
+
+%!  showPetById(+Id, -Pet)
