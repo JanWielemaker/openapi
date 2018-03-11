@@ -9,8 +9,14 @@
       - PlDoc comment
 
   - Client
-    - Generate client predicates from spec, including docs.
-    - Provide reflexive type interface
+    - Generate client predicates from spec
+      - Normal query parameters
+      - Path parameters
+      - Request body
+    - Use an option list for optional arguments?
+    - Generate PlDoc.
+    - Provide reflexive type interface.
+    - Type checking request and response
 
   - Testing
     - Is there a comprehensive test suite?
