@@ -324,7 +324,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                           CheckParams, Options)
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
-        Query = []
+        Query = [],
+        CheckParams = true
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     request_body(Content, ContentGoal, OpenOptions),
@@ -349,9 +350,18 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
            ).
 
 client_parameters([], _, [], [], true, _).
-client_parameters([H|T], PathBindings, [P0|Ps], [Name=P0|Qs], Check, Options) :-
+client_parameters([H|T], PathBindings, [P0|Ps],
+                  [qparam(Name,P0,Type,Opt)|Qs], Check, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
+    (   H.get(required) == false
+    ->  Opt = optional
+    ;   Opt = required
+    ),
+    (   json_type(H.get(schema), Type, Options)
+    ->  true
+    ;   Type = any
+    ),
     atom_string(Name, NameS),
     client_parameters(T, PathBindings, Ps, Qs, Check0, Options),
     mkconj(Check0, true, Check).
@@ -384,14 +394,27 @@ request_body(_, true, []).
 :- public
     assemble_query/4.
 
-assemble_query(Module, Path, [], URL) :-
+assemble_query(Module, Path, QParams, URL) :-
+    call(Module:openapi_server(ServerBase)),
+    convlist(client_query_param, QParams, Query),
+    (   Query == []
+    ->  atomics_to_string([ServerBase, Path], URL)
+    ;   uri_query_components(QueryString, Query),
+        atomics_to_string([ServerBase, Path, "?", QueryString], URL)
+    ).
+
+client_query_param(qparam(Name, PlValue, Type, _Required),
+                   Name = Value) :-
+    nonvar(PlValue),
     !,
-    call(Module:openapi_server(ServerBase)),
-    atomics_to_string([ServerBase, Path], URL).
-assemble_query(Module, Path, Query, URL) :-
-    call(Module:openapi_server(ServerBase)),
-    uri_query_components(QueryString, Query),
-    atomics_to_string([ServerBase, Path, "?", QueryString], URL).
+    (   Type == any
+    ->  Value = PlValue
+    ;   json_check(Type, Value, PlValue)
+    ).
+client_query_param(qparam(_Name, _PlValue, _Type, optional), _) :-
+    !, fail.                                    % leave to convlist/3.
+client_query_param(qparam(_Name, PlValue, Type, required), _) :-
+    type_error(Type, PlValue).
 
 %!  openapi_read_reply(+Code, +In, -Result) is det.
 %
