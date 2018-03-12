@@ -40,12 +40,12 @@
 :- use_module(library(http/js_write)).
 :- use_module(library(http/html_head)).
 
-:- http_handler(root(swagger_ui), swagger_ui, []).
+/** <module> Swagger UI
 
-/*
-  <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700" rel="stylesheet">
-  <link rel="stylesheet" type="text/css" href="//unpkg.com/swagger-ui-dist@3.0.10/swagger-ui.css" >
+@see https://github.com/swagger-api/swagger-ui/blob/master/docs/usage/configuration.md
 */
+
+:- http_handler(root(swagger_ui), swagger_ui, []).
 
 :- html_resource(
        swagger,

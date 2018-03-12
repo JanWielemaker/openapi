@@ -18,6 +18,9 @@
     - Provide reflexive type interface.
     - Type checking request and response
     - Deal with empty "OK" responses
+      - 201
+        - May read result from `Location` header
+	- May return the object proper
 
   - Testing
     - Is there a comprehensive test suite?

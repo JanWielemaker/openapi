@@ -31,7 +31,7 @@ listPets(Limit, Pets) :-
     api_default(Limit, 100),
     once(findnsols(Limit, _{id:Id, name:Name}, pet(Id, Name), Pets)).
 
-createPets(Pets, status(201)) :-
+createPets(Pets, status(201)) :-                % Provide Location
     forall(member(Pet, Pets),
            create_pet(Pet)).
 
