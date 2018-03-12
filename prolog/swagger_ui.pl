@@ -58,13 +58,12 @@
        ]).
 
 swagger_ui(_Request) :-
+    http_link_to_id(swagger_config, [], ConfigHREF),
     reply_html_page(
         title('Swagger UI'),
-        \swagger_page).
+        \swagger_page(ConfigHREF)).
 
-swagger_page -->
-    { http_link_to_id(swagger_config, [], ConfigHREF)
-    },
+swagger_page(ConfigHREF) -->
     html_requires(swagger),
     html(div(id('swagger-ui'), [])),
     js_script({|javascript(ConfigHREF)||
@@ -82,7 +81,7 @@ window.onload = function() {
       SwaggerUIBundle.plugins.DownloadUrl
     ],
     layout: "StandaloneLayout"
-  })
-  window.ui = ui
+  });
+  window.ui = ui;
 }
 |}).

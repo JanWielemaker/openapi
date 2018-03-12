@@ -3,6 +3,9 @@
 :- use_module(prolog/openapi).
 :- use_module(prolog/swagger_ui).
 
+:- http_handler(root(.),
+                http_redirect(see_other, root('swagger_ui')),
+                []).
 :- http_handler(root('swagger.yaml'),
                 http_reply_file('examples/petstore.yaml', []),
                 [id(swagger_config)]).
