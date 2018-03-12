@@ -199,7 +199,7 @@ parameters([H|T], PathB, Req, [P0|Ps], Options) :-
     !,
     atom_string(Name, NameS),
     (   memberchk(Name=P0, PathB)
-    ->  true                                    % TBD: type conversion
+    ->  true                            % TBD: type conversion and encoding
     ;   existence_error(path_parameter, Name)
     ),
     parameters(T, PathB, Req, Ps, Options).
@@ -325,7 +325,9 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         Params = [],
         Query = []
     ),
-    append(Params, [Result], AllParams),
+    content_parameter(Method, Spec, Content, Params, Params1, Options),
+    request_body(Content, ContentGoal, OpenOptions),
+    append(Params1, [Result], AllParams),
     prolog_load_context(module, Module),
     (   PathBindings == []
     ->  Path = PathSpec,
@@ -333,12 +335,13 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ;   PathGoal = atomic_list_concat(PathList, '/', Path)
     ),
     Head =.. [PredName|AllParams],
-    Body = ( PathGoal,
+    Body = ( PathGoal, ContentGoal,
              openapi:assemble_query(Module, Path, Query, URL),
              setup_call_cleanup(
                  http_open(URL, In,
                            [ status_code(Status),
                              method(Method)
+                           | OpenOptions
                            ]),
                  openapi:openapi_read_reply(Status, In, Result),
                  close(In))
@@ -359,6 +362,17 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Options) :-
     ;   existence_error(path_parameter, Name)
     ),
     client_parameters(T, PathBindings, Ps, Query, Options).
+
+request_body(content('application/json', Schema, InVar),
+             openapi:json_check(Schema, OutVar, InVar),
+             [ post(json(OutVar))
+             ]) :-
+    !.
+request_body(content(MediaType, _Schema, _Var), _, _) :-
+    !,
+    domain_error(openapi(content_type), MediaType).
+request_body(_, true, []).
+
 
 :- public
     assemble_query/4.
