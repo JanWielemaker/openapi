@@ -401,7 +401,7 @@ openapi_read_reply(Code, In, Result) :-
 		 *          DISPATCHER		*
 		 *******************************/
 
-%!  openapi_dispatch(:Request) is det.
+%!  openapi_dispatch(:Request) is semidet.
 %
 %   Generic HTTP handler to deal with OpenAPI REST requests.
 %
@@ -414,6 +414,7 @@ openapi_dispatch(M:Request) :-
     memberchk(path(FullPath), Request),
     memberchk(method(Method), Request),
     M:openapi_root(Root),
+    !,
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
     M:openapi_handler(Method, Parts, RequestParams, Content, Responses,

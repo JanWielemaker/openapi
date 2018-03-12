@@ -1,12 +1,25 @@
 :- use_module(library(http/thread_httpd)).
+:- use_module(library(http/http_dispatch)).
 :- use_module(prolog/openapi).
+:- use_module(prolog/swagger_ui).
+
+:- http_handler(root('swagger.yaml'),
+                http_reply_file('examples/petstore.yaml', []),
+                [id(swagger_config)]).
 
 :- openapi_server('examples/petstore', []).
 
 server(Port) :-
-    http_server(openapi_dispatch,
+    http_server(dispatch,
                 [ port(Port)
                 ]).
+
+dispatch(Request) :-
+    openapi_dispatch(Request),
+    !.
+dispatch(Request) :-
+    http_dispatch(Request).
+
 
 :- dynamic
     pet/2.                                      % ?Id, ?Name
