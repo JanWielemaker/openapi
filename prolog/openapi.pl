@@ -320,7 +320,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     path_vars(Parts, PathList, PathBindings),   % TBD: deal with URL encoding
     atom_string(PredName, Spec.operationId),
     (   ParamSpecs = Spec.get(parameters)
-    ->  client_parameters(ParamSpecs, PathBindings, Params, Query, Options)
+    ->  client_parameters(ParamSpecs, PathBindings, Params, Query,
+                          CheckParams, Options)
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
         Query = []
@@ -335,7 +336,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ;   PathGoal = atomic_list_concat(PathList, '/', Path)
     ),
     Head =.. [PredName|AllParams],
-    Body = ( PathGoal, ContentGoal,
+    Body = ( CheckParams, PathGoal, ContentGoal,
              openapi:assemble_query(Module, Path, Query, URL),
              setup_call_cleanup(
                  http_open(URL, In,
@@ -347,21 +348,27 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                  close(In))
            ).
 
-client_parameters([], _, [], [], _).
-client_parameters([H|T], PathBindings, [P0|Ps], [Name=P0|Qs], Options) :-
+client_parameters([], _, [], [], true, _).
+client_parameters([H|T], PathBindings, [P0|Ps], [Name=P0|Qs], Check, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     atom_string(Name, NameS),
-    client_parameters(T, PathBindings, Ps, Qs, Options).
-client_parameters([H|T], PathBindings, [P0|Ps], Query, Options) :-
+    client_parameters(T, PathBindings, Ps, Qs, Check0, Options),
+    mkconj(Check0, true, Check).
+client_parameters([H|T], PathBindings, [P0|Ps], Query, Check, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
-    (   memberchk(Name=P0, PathBindings)
-    ->  true                                    % TBD: type conversion
+    (   memberchk(Name=Segment, PathBindings)
+    ->  Check1 = uri_encoded(segment, P0, Segment)
     ;   existence_error(path_parameter, Name)
     ),
-    client_parameters(T, PathBindings, Ps, Query, Options).
+    client_parameters(T, PathBindings, Ps, Query, Check0, Options),
+    mkconj(Check0, Check1, Check).
+
+mkconj(true, G, G) :- !.
+mkconj(G, true, G) :- !.
+mkconj(G1, G2,  (G1,G2)).
 
 request_body(content('application/json', Schema, InVar),
              openapi:json_check(Schema, OutVar, InVar),
