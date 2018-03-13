@@ -177,7 +177,8 @@ path_handlers([Method-Spec|T], Path, Options) -->
 %!		?Result, -Handler) is det.
 
 path_handler(Path, Method, Spec,
-             openapi_handler(Method, PathList, Request,
+             openapi_handler(Method,
+                             PathList, Request, AsOption, OptionParam,
                              Content, Responses, Handler),
              Options) :-
     atomic_list_concat(Parts, '/', Path),
@@ -524,12 +525,27 @@ openapi_dispatch(M:Request) :-
     !,
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
-    M:openapi_handler(Method, Parts, RequestParams, Content, Responses,
+    M:openapi_handler(Method, Parts,
+                      Required, AsOption, OptionParam, Content,
+                      Responses,
                       Handler),
+    append(Required, AsOption, RequestParams),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
+    server_handler_options(AsOption, OptionParam),
     call(M:Handler),
     openapi_reply(Responses).
+
+server_handler_options([], []).
+server_handler_options([H|T], Options) :-
+    arg(1, H, Value),
+    (   var(Value)
+    ->  server_handler_options(T, Options)
+    ;   functor(H, Name, _),
+        Opt =.. [Name,Value],
+        Options = [Opt|OptT],
+        server_handler_options(T, OptT)
+    ).
 
 %!  request_body(+ContentSpec, +Request) is det.
 %
