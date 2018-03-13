@@ -320,8 +320,13 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     path_vars(Parts, PathList, PathBindings),   % TBD: deal with URL encoding
     atom_string(PredName, Spec.operationId),
     (   ParamSpecs = Spec.get(parameters)
-    ->  client_parameters(ParamSpecs, PathBindings, Params, Query,
-                          CheckParams, Options)
+    ->  client_parameters(ParamSpecs, PathBindings, Params0, Query,
+                          CheckParams, Options),
+        optional_client_params(Params0, Params, Optional, Options),
+        (   Optional == []
+        ->  ClientOptionArg = []
+        ;   ClientOptionArg = [ClientOptions]
+        )
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
         Query = [],
@@ -329,7 +334,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     request_body(Content, ContentGoal, OpenOptions),
-    append(Params1, [Result], AllParams),
+    append(Params1, [Result|ClientOptionArg], AllParams),
     prolog_load_context(module, Module),
     (   PathBindings == []
     ->  Path = PathSpec,
@@ -338,7 +343,9 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ),
     Head =.. [PredName|AllParams],
     Body = ( CheckParams, PathGoal, ContentGoal,
-             openapi:assemble_query(Module, Path, Query, URL),
+             openapi:assemble_query(Module, Path,
+                                    Query, Optional, ClientOptions,
+                                    URL),
              setup_call_cleanup(
                  http_open(URL, In,
                            [ status_code(Status),
@@ -386,6 +393,16 @@ mkconj(true, G, G) :- !.
 mkconj(G, true, G) :- !.
 mkconj(G1, G2,  (G1,G2)).
 
+optional_client_params(Params, Params, [], Options) :-
+    option(optional(unbound), Options),
+    !.
+optional_client_params(Params, Args, Options, _) :-
+    partition(is_optional, Params, Options, Args).
+
+is_optional(qparam(_,_,_,optional)).
+
+%!  request_body(+ContentSpec, -Goal, -HTTPOPenOptions) is det.
+
 request_body(content('application/json', Schema, InVar),
              openapi:json_check(Schema, OutVar, InVar),
              [ post(json(OutVar))
@@ -398,11 +415,13 @@ request_body(_, true, []).
 
 
 :- public
-    assemble_query/4.
+    assemble_query/6.
 
-assemble_query(Module, Path, QParams, URL) :-
+assemble_query(Module, Path, QParams, QOptional, QOptions, URL) :-
     call(Module:openapi_server(ServerBase)),
-    convlist(client_query_param, QParams, Query),
+    convlist(client_query_param, QParams, QueryFromArgs),
+    optional_query_params(QOptional, QOptions, QueryFromOptions),
+    append(QueryFromArgs, QueryFromOptions, Query),
     (   Query == []
     ->  atomics_to_string([ServerBase, Path], URL)
     ;   uri_query_components(QueryString, Query),
@@ -421,6 +440,17 @@ client_query_param(qparam(_Name, _PlValue, _Type, optional), _) :-
     !, fail.                                    % leave to convlist/3.
 client_query_param(qparam(_Name, PlValue, Type, required), _) :-
     type_error(Type, PlValue).
+
+optional_query_params([], _, []).
+optional_query_params([qparam(Name, PlValue, Type, optional)|T0], Options, Q) :-
+    Term =.. [Name,PlValue],
+    option(Term, Options),
+    !,
+    json_check(Type, Value, PlValue),
+    Q = [Name=Value|QT],
+    optional_query_params(T0, Options, QT).
+optional_query_params([_|T0], Options, Q) :-
+    optional_query_params(T0, Options, Q).
 
 %!  segment_value(+Type, ?Segment, ?Prolog) is det.
 %
