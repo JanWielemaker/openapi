@@ -66,7 +66,7 @@ openapi_server(File, Options) :-
     throw(error(context_error(nodirective, openapi_server(File, Options)), _)).
 
 expand_openapi_server(File, Options,
-                      [ (:- discontiguous((openapi_handler/8,
+                      [ (:- discontiguous((openapi_handler/9,
                                            openapi_doc/2)))
                       | Clauses
                       ]) :-
@@ -182,14 +182,14 @@ path_handlers([Method-Spec|T], Path, Options) -->
 %!		?Result, -Handler) is det.
 
 path_handler(Path, Method, Spec,
-             openapi_handler(Method,
-                             PathList, Request, AsOption, OptionParam,
+             openapi_handler(Method, PathList, SegmentMatches,
+                             Request, AsOption, OptionParam,
                              Content, Responses, Handler),
              Options) :-
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
-    ->  server_parameters(ParamSpecs, PathBindings,
+    ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
                           Request, AsOption, Params, Options),
         (   AsOption == []
         ->  OptionParams = []
@@ -208,8 +208,12 @@ path_handler(Path, Method, Spec,
     atom_string(PredName, Spec.operationId),
     Handler =.. [PredName|AllParams].
 
-server_parameters([], _, [], [], [], _).
-server_parameters([H|T], PathB, Request, AsOption, Params, Options) :-
+%!  server_parameters(+ParamSpecs, +PathBindings,
+%!                    -SegmentMatches, -RequestParams, -RequestOptions,
+%!                    -HandlerParams, +Options) is det.
+
+server_parameters([], _, [], [], [], [], _).
+server_parameters([H|T], Segs, PathB, Request, AsOption, Params, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
@@ -218,21 +222,22 @@ server_parameters([H|T], PathB, Request, AsOption, Params, Options) :-
     (   Opts = [optional(true)|_],
         \+ option(optional(unbound), Options)
     ->  AsOption = [R0|AsOpts],
-        server_parameters(T, PathB, Request, AsOpts, Params, Options)
+        server_parameters(T, PathB, Segs, Request, AsOpts, Params, Options)
     ;   Request = [R0|Req],
         Params  = [P0|Ps],
-        server_parameters(T, PathB, Req, AsOption, Ps, Options)
+        server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options)
     ).
-server_parameters([H|T], PathB, Req, AsOption, [P0|Ps], Options) :-
+server_parameters([H|T], PathB, [segment(Type, Seg, P0)|Segs],
+                  Req, AsOption, [P0|Ps], Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
-    (   memberchk(Name=P0, PathB)
-    ->  true                            % TBD: type conversion and encoding
+    (   memberchk(Name=Seg, PathB)
+    ->  param_type(H, Type, Options)
     ;   existence_error(path_parameter, Name)
     ),
-    server_parameters(T, PathB, Req, AsOption, Ps, Options).
-server_parameters([H|_], _PathB, _Req, _AsOption, _, _) :-
+    server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
+server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, _) :-
     print_message(error, openapi(parameter_failed(H))),
     fail.
 
@@ -544,8 +549,6 @@ optional_query_params([_|T0], Options, Q) :-
 %   Transform between a Segment string and the Prolog value according to
 %   Type.
 
-:- public segment_value/3.
-
 segment_value(Type, Segment, Prolog) :-
     nonvar(Segment),
     !,
@@ -586,16 +589,20 @@ openapi_dispatch(M:Request) :-
     !,
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
-    M:openapi_handler(Method, Parts,
+    M:openapi_handler(Method, Parts, Segments,
                       Required, AsOption, OptionParam, Content,
                       Responses,
                       Handler),
+    maplist(segment_parameter, Segments),
     append(Required, AsOption, RequestParams),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
     server_handler_options(AsOption, OptionParam),
     call(M:Handler),
     openapi_reply(Responses).
+
+segment_parameter(segment(Type, Segment, Value)) :-
+    segment_value(Type, Segment, Value).
 
 server_handler_options([], []).
 server_handler_options([H|T], Options) :-
