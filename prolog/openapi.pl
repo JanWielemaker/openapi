@@ -935,12 +935,7 @@ openapi_doc(File, Mode, Options) :-
     phrase(server_clauses(Spec, Options1), Clauses),
     setup_call_cleanup(
         doc_output(Stream, Close, Options),
-        (   doc_data(Clauses, OperationId, Data),
-            phrase(openapi_doc(OperationId, Data, [mode(Mode)|Options]), S),
-            format(Stream, '~s', [S]),
-            fail
-        ;   true
-        ),
+        doc_gen(Stream, File, Clauses, [mode(Mode)|Options]),
         Close).
 
 doc_output(Stream, close(Stream), Options) :-
@@ -948,6 +943,27 @@ doc_output(Stream, close(Stream), Options) :-
     !,
     open(File, write, Stream).
 doc_output(current_output, true, _).
+
+doc_gen(Stream, File, Clauses, Options) :-
+    file_header(Stream, File, Options),
+    forall(doc_data(Clauses, OperationId, Data),
+           (   phrase(openapi_doc(OperationId, Data, Options), S),
+               format(Stream, '~s', [S]),
+               fail
+           ;   true
+           )).
+
+file_header(Stream, File, Options) :-
+    option(mode(client), Options),
+    !,
+    format(Stream, ':- use_module(library(openapi)).~n~n', []),
+    format(Stream, ':- openapi_client(~q, []).~n~n', [File]).
+file_header(Stream, File, Options) :-
+    option(mode(server), Options),
+    !,
+    format(Stream, ':- use_module(library(openapi)).~n~n', []),
+    format(Stream, ':- openapi_server(~q, []).~n~n', [File]).
+file_header(_, _, _).
 
 %!  openapi_doc(+OperationID, +Data, +Options)//
 

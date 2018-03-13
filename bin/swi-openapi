@@ -10,7 +10,13 @@
 
 main(Argv) :-
     argv_options(Argv, Files, Options),
+    (   option(client(_), Options)
+    ;   option(server(_), Options)
+    ), !,
     maplist(generate(Options), Files).
+main(_) :-
+    usage,
+    halt.
 
 generate(Options, File) :-
     gen_client(File, Options),
@@ -21,12 +27,14 @@ gen_client(File, Options) :-
     output_options(client(Client), File, Out),
     append(Options, Out, GenOptions),
     openapi_doc(File, client, GenOptions).
+gen_client(_, _).
 
 gen_server(File, Options) :-
     option(server(Server), Options), !,
     output_options(server(Server), File, Out),
     append(Options, Out, GenOptions),
     openapi_doc(File, server, GenOptions).
+gen_server(_, _).
 
 output_options(client(-), _, []) :-
     !.
@@ -42,3 +50,10 @@ output_options(server(true), From, [file(Out)]) :-
     atomic_list_concat([Base, '_server.pl'], Out).
 output_options(client(File), _, [file(File)]).
 output_options(server(File), _, [file(File)]).
+
+
+usage :-
+    current_prolog_flag(os_argv, [_,Exe|_]),
+    format(user_error, 'Usage: ~w [options] file ...~n~n', [Exe]),
+    format(user_error, '  --client[=file]     Generate client~n', []),
+    format(user_error, '  --server[=file]     Generate server~n', []).
