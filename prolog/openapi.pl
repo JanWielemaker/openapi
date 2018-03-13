@@ -238,7 +238,8 @@ server_parameters([H|_], _PathB, _Req, _AsOption, _, _) :-
 
 http_param_options(Spec, Options) -->
     hp_optional(Spec),
-    hp_type(Spec, Options).
+    hp_type(Spec, Options),
+    hp_description(Spec).
 
 hp_optional(Spec) -->
     { param_optional(Spec, optional) },
@@ -254,6 +255,12 @@ hp_type(_, _) --> [].
 hp_schema(Spec, Options) -->
     { json_type(Spec, Type, Options) },
     [ openapi(Type) ].
+
+hp_description(Spec) -->
+    { Descr = Spec.get(description) },
+    !,
+    [ description(Descr) ].
+hp_description(_) --> [].
 
 %!  path_docs(+Spec, -Docs) is det.
 %
@@ -299,16 +306,22 @@ path_vars([H|T0], [H|T], Bindings) :-
 %   @tbd The post may contain requestBody that specifies the content
 %   type and optional schema.
 
-content_parameter(Method, Spec, content(MediaType, Schema, Var),
+content_parameter(Method, Spec, content(MediaType, Schema, Var, Descr),
                   Params, AllParams, Options) :-
     has_content(Method),
     !,
     request_content_type(Spec, MediaType, Schema, Options),
+    content_description(Spec, Descr),
     append(Params, [Var], AllParams).
 content_parameter(_, _, -, Params, Params, _).
 
 has_content(post).
 has_content(put).
+
+content_description(JSON, Descr) :-
+    Descr = JSON.get(requestBody).get(description),
+    !.
+content_description(_JSON, "").
 
 request_content_type(Spec, MediaType, Schema, Options) :-
     (   Body = Spec.get(requestBody)
@@ -467,13 +480,15 @@ mkconj(G, true, G) :- !.
 mkconj(G1, G2,  (G1,G2)).
 
 %!  request_body(+ContentSpec, -Goal, -HTTPOPenOptions) is det.
+%
+%   Translate the request body into options for http_open/3.
 
-request_body(content('application/json', Schema, InVar),
+request_body(content('application/json', Schema, InVar, _Descr),
              openapi:json_check(Schema, OutVar, InVar),
              [ post(json(OutVar))
              ]) :-
     !.
-request_body(content(MediaType, _Schema, _Var), _, _) :-
+request_body(content(MediaType, _Schema, _Var, _Descr), _, _) :-
     !,
     domain_error(openapi(content_type), MediaType).
 request_body(_, true, []).
@@ -591,10 +606,10 @@ server_handler_options([H|T], Options) :-
 %   Read the specified request body.
 
 request_body(-, _).
-request_body(content('application/json', -, Body), Request) :-
+request_body(content('application/json', -, Body, _Descr), Request) :-
     !,
     http_read_json_dict(Request, Body).
-request_body(content('application/json', Type, Body), Request) :-
+request_body(content('application/json', Type, Body, _Descr), Request) :-
     http_read_json_dict(Request, Body0),
     json_check(Type, Body0, Body).
 
@@ -913,7 +928,7 @@ doc_params(Request, Content, Responses, AsOption) -->
 
 doc_request_params([]) --> [].
 doc_request_params([H|T]) -->
-    { H =.. [Name,Options],
+    { H =.. [Name,_Var,Options],
       memberchk(openapi(Type), Options),
       (   memberchk(description(Description), Options)
       ->  true
@@ -924,7 +939,7 @@ doc_request_params([H|T]) -->
     doc_request_params(T).
 
 doc_content_param(-) --> [].
-doc_content_param(content(_MediaType, Scheme, _Var)) -->
+doc_content_param(content(_MediaType, Scheme, _Var, Description)) -->
     [ p(content, Scheme, Description) ].
 
 doc_response_param(Responses) -->
@@ -936,7 +951,8 @@ doc_response_param(Responses) -->
 
 doc_option_param([]) --> !.
 doc_option_param(AsOption) -->
-    [ p(options, list(option), options(AsOption)) ].
+    { phrase(doc_request_params(AsOption), Options) },
+    [ p(options, list(option), options(Options)) ].
 
 
 		 /*******************************
