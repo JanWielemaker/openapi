@@ -878,6 +878,66 @@ json_type(Spec, url(URL), Options) :-
     file_directory_name(Base, Dir),
     atom_concat(Dir, URLS, URL).
 
+		 /*******************************
+		 *        DOC GENERATION	*
+		 *******************************/
+
+%!  openapi_doc(:OperationID)//
+
+openapi_doc(OperationId) -->
+    { doc_data(OperationId, _Data) }.
+
+%!  doc_data(:OperationID, -Data:dict) is det.
+%
+%   Get  a  dict  that  contains   all    information   to  produce  the
+%   documentation.
+
+:- meta_predicate
+    doc_data(:, -).
+
+doc_data(M:OperationId,
+         _{arguments:Params,
+           doc:Doc}) :-
+    call(M:openapi_handler(_Method,
+                           _PathList, Request, AsOption, _OptionParam,
+                           Content, Responses, Handler)),
+    functor(Handler, OperationId, _),
+    call(M:openapi_doc(OperationId, Doc)),
+    phrase(doc_params(Request, Content, Responses, AsOption), Params).
+
+doc_params(Request, Content, Responses, AsOption) -->
+    doc_request_params(Request),
+    doc_content_param(Content),
+    doc_response_param(Responses),
+    doc_option_param(AsOption).
+
+doc_request_params([]) --> [].
+doc_request_params([H|T]) -->
+    { H =.. [Name,Options],
+      memberchk(openapi(Type), Options),
+      (   memberchk(description(Description), Options)
+      ->  true
+      ;   Description = ""
+      )
+    },
+    [ p(Name,Type,Description) ],
+    doc_request_params(T).
+
+doc_content_param(-) --> [].
+doc_content_param(content(_MediaType, Scheme, _Var)) -->
+    [ p(content, Scheme, Description) ].
+
+doc_response_param(Responses) -->
+    { member(response(Code,_MediaType, Scheme, _Var), Responses),
+      between(200, 399, Code),
+      !
+    },
+    [ p(response, Scheme, Description) ].
+
+doc_option_param([]) --> !.
+doc_option_param(AsOption) -->
+    [ p(options, list(option), options(AsOption)) ].
+
 
 		 /*******************************
 		 *        ENABLE EXPANSION	*
