@@ -168,42 +168,48 @@ server_path_clause(Path-Spec, Options) -->
 
 path_handlers([], _Path, _) --> [].
 path_handlers([Method-Spec|T], Path, Options) -->
-    { path_handler(Path, Method, Spec, PathList, Request, Content, Result,
-                   Handler, Options)
+    { path_handler(Path, Method, Spec, Fact, Options)
     },
-    [ openapi_handler(Method, PathList, Request, Content, Result, Handler) ],
+    [ Fact ],
     path_handlers(T, Path, Options).
 
 %! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
 %!		?Result, -Handler) is det.
 
-path_handler(Path, Method, Spec, PathList, Request,
-             Content, Responses,
-             Handler, Options) :-
+path_handler(Path, Method, Spec,
+             openapi_handler(Method, PathList, Request,
+                             Content, Responses, Handler),
+             Options) :-
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
-    ->  parameters(ParamSpecs, PathBindings, Request, Params, Options)
+    ->  server_parameters(ParamSpecs, PathBindings,
+                          Request, AsOption, Params, Options),
+        (   AsOption == []
+        ->  OptionParams = []
+        ;   OptionParams = [OptionParam]
+        )
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
-        Request = []
+        Request = [],
+        OptionParams = []
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
-    append(Params1, [Result], AllParams),
+    append(Params1, [Result|OptionParams], AllParams),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     atom_string(PredName, Spec.operationId),
     Handler =.. [PredName|AllParams].
 
-parameters([], _, [], [], _).
-parameters([H|T], PathB, [R0|Req], [P0|Ps], Options) :-
+server_parameters([], _, [], [], [], _).
+server_parameters([H|T], PathB, [R0|Req], AsOption, [P0|Ps], Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
     atom_string(Name, NameS),
     R0 =.. [Name,P0,Opts],
-    parameters(T, PathB, Req, Ps, Options).
-parameters([H|T], PathB, Req, [P0|Ps], Options) :-
+    server_parameters(T, PathB, Req, AsOption, Ps, Options).
+server_parameters([H|T], PathB, Req, AsOption, [P0|Ps], Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
@@ -211,8 +217,8 @@ parameters([H|T], PathB, Req, [P0|Ps], Options) :-
     ->  true                            % TBD: type conversion and encoding
     ;   existence_error(path_parameter, Name)
     ),
-    parameters(T, PathB, Req, Ps, Options).
-parameters([H|_], _PathB, _Req, _, _) :-
+    server_parameters(T, PathB, Req, AsOption, Ps, Options).
+server_parameters([H|_], _PathB, _Req, _AsOption, _, _) :-
     print_message(error, openapi(parameter_failed(H))),
     fail.
 
