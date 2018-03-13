@@ -37,7 +37,7 @@
             openapi_server/2,                   % +File, +Options
             openapi_client/2,                   % +File, +Options
 
-            api_default/2,                      % Var, Default
+            openapi_doc/0,
 
             openapi_read/2                      % +File, -Term
           ]).
@@ -51,12 +51,14 @@
 :- use_module(library(lists)).
 :- use_module(library(process)).
 :- use_module(library(uri)).
+:- use_module(library(dcg/basics)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_json)).
 :- use_module(library(http/http_parameters)).
 
 :- meta_predicate
     openapi_dispatch(:).
+:- module_transparent openapi_doc/0.
 
 %!  openapi_server(+File, +Options)
 %
@@ -92,14 +94,6 @@ openapi_client(File, Options) :-
 expand_openapi_client(File, Options, Clauses) :-
     read_openapi_spec(File, Spec, Options, Options1),
     phrase(client_clauses(Spec, Options1), Clauses).
-
-%!  api_default(+Param, +Default) is det.
-
-api_default(Param, Default) :-
-    (   var(Param)
-    ->  Param = Default
-    ;   true
-    ).
 
 %!  read_openapi_spec(+File, -Spec, +Options0, -Options) is det.
 
@@ -919,10 +913,136 @@ json_type(Spec, url(URL), Options) :-
 		 *        DOC GENERATION	*
 		 *******************************/
 
-%!  openapi_doc(:OperationID)//
+%!  openapi_doc
+%
+%   Write documentation to the current output
 
-openapi_doc(OperationId) -->
-    { doc_data(OperationId, _Data) }.
+openapi_doc :-
+    context_module(M),
+    (   phrase(openapi_doc(M:_, []), S),
+        format('~s', [S]),
+        fail
+    ;   true
+    ).
+
+%!  openapi_doc(:OperationID, +Options)//
+
+openapi_doc(OperationId, _Options) -->
+    { doc_data(OperationId, Data) },
+    doc_mode(OperationId, Data.arguments),
+    "\n%\n",
+    doc_description(Data.doc),
+    doc_args(Data.arguments),
+    "\n",
+    server_head(OperationId, Data.arguments), " :-",
+    "\n   debug(openapi, \"~p\",
+                [", server_head(OperationId, Data.arguments), "]),",
+    "\n   Response = status(404).\n\n".
+
+doc_mode(_:OperationId, Args) -->
+    "%! ", quoted_atom(OperationId),
+    "(", mode_args(Args), ") is det.".
+
+mode_args([]) --> [].
+mode_args([H|T]) -->
+    mode_arg(H),
+    (  {T==[]}
+    -> []
+    ;  ", ",
+       mode_args(T)
+    ).
+
+mode_arg(p(Name, _Type, _Descr)) -->
+    mode(Name), camel_case(Name).
+
+mode(response) --> !, "-".
+mode(_) --> "+".
+
+server_head(_:OperationId, Args) -->
+    quoted_atom(OperationId),
+    "(", arguments(Args), ")".
+
+arguments([]) --> [].
+arguments([H|T]) -->
+    argument(H),
+    (  {T==[]}
+    -> []
+    ;  ", ",
+       arguments(T)
+    ).
+
+argument(p(Name, _Type, _Descr)) -->
+    camel_case(Name).
+
+quoted_atom(Atom, List, Tail) :-
+    format(codes(List,Tail), '~q', [Atom]).
+
+camel_case(Name) -->
+    { camel_case(Name, Camel) },
+    atom(Camel).
+
+camel_case(Name, Camel) :-
+    atom_codes(Name, Codes),
+    phrase(camel(Codes), CamelCodes),
+    atom_codes(Camel, CamelCodes).
+
+camel([]) --> [].
+camel([H|T]) -->
+    { code_type(H, to_lower(U)) },
+    [U],
+    camel_skip(T).
+
+camel_skip([]) --> [].
+camel_skip([0'_|T]) --> !, camel(T).
+camel_skip([H|T]) --> !, [H], camel_skip(T).
+
+doc_description(Doc) -->
+    { memberchk(summary(Summary), Doc),
+      memberchk(description(Desc), Doc),
+      split_string(Desc, "\n", "", Lines)
+    }, !,
+    "%  ", atom(Summary), "\n",
+    lines(Lines, "%  "),
+    "%\n".
+doc_description(Doc) -->
+    { memberchk(summary(Summary), Doc)
+    }, !,
+    "%  ", atom(Summary), "\n",
+    "%\n".
+doc_description(_) -->  [].
+
+lines([], _) --> "\n".
+lines([H|T], Prefix) --> atom(Prefix), atom(H), lines(T, Prefix).
+
+doc_args([]) --> [].
+doc_args([H|T]) --> doc_arg(H), doc_args(T).
+
+doc_arg(p(Name, Type, Description)) -->
+    "%  @arg ", camel_case(Name), " ", type(Type), "\n",
+    arg_description(Description).
+
+arg_description(options(List)) -->
+    !,
+    arg_options(List).
+arg_description(Description) -->
+    { split_string(Description, "\n", "", Lines) },
+    lines(Lines, "%       ").
+
+arg_options([]) --> [].
+arg_options([H|T]) --> arg_option(H), arg_options(T).
+
+arg_option(p(Name, Type, Description)) -->
+    "%       - ", quoted_atom(Name), "(+", type(Type), ")", "\n",
+    "%         ", atom(Description), "\n".
+
+type(list(option)) --> !.
+type(url(URL)) -->
+    !,
+    { file_base_name(URL, TypeName) },
+    atom(TypeName).
+type(Type, List, Tail) :-
+    format(codes(List, Tail), '~p', [Type]).
+
 
 %!  doc_data(:OperationID, -Data:dict) is det.
 %
