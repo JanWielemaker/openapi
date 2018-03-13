@@ -196,6 +196,7 @@ path_handler(Path, Method, Spec,
         ;   OptionParams = [OptionParam]
         )
     ;   assertion(PathBindings == []),          % TBD: Proper message
+        SegmentMatches = [],
         Params = [],
         Request = [],
         AsOption = [],
@@ -213,7 +214,7 @@ path_handler(Path, Method, Spec,
 %!                    -HandlerParams, +Options) is det.
 
 server_parameters([], _, [], [], [], [], _).
-server_parameters([H|T], Segs, PathB, Request, AsOption, Params, Options) :-
+server_parameters([H|T], PathB, Segs, Request, AsOption, Params, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
@@ -227,13 +228,14 @@ server_parameters([H|T], Segs, PathB, Request, AsOption, Params, Options) :-
         Params  = [P0|Ps],
         server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options)
     ).
-server_parameters([H|T], PathB, [segment(Type, Seg, P0)|Segs],
+server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
                   Req, AsOption, [P0|Ps], Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
     (   memberchk(Name=Seg, PathB)
-    ->  param_type(H, Type, Options)
+    ->  param_type(H, Type, Options),
+        param_description(H, Descr)
     ;   existence_error(path_parameter, Name)
     ),
     server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
@@ -487,6 +489,11 @@ param_type(Spec, Type, Options) :-
     !.
 param_type(_Spec, any, _Options).
 
+param_description(Spec, Description) :-
+    Description = Spec.get(description),
+    !.
+param_description(_Spec, "").
+
 mkconj(true, G, G) :- !.
 mkconj(G, true, G) :- !.
 mkconj(G1, G2,  (G1,G2)).
@@ -601,7 +608,7 @@ openapi_dispatch(M:Request) :-
     call(M:Handler),
     openapi_reply(Responses).
 
-segment_parameter(segment(Type, Segment, Value)) :-
+segment_parameter(segment(Type, Segment, Value, _Name, _Description)) :-
     segment_value(Type, Segment, Value).
 
 server_handler_options([], []).
@@ -928,18 +935,42 @@ openapi_doc(OperationId) -->
 doc_data(M:OperationId,
          _{arguments:Params,
            doc:Doc}) :-
-    call(M:openapi_handler(_Method,
-                           _PathList, Request, AsOption, _OptionParam,
+    call(M:openapi_handler(_Method, _PathList, Segments,
+                           Request, AsOption, OptionParam,
                            Content, Responses, Handler)),
-    functor(Handler, OperationId, _),
+    Handler =.. [OperationId|Args],
     call(M:openapi_doc(OperationId, Doc)),
-    phrase(doc_params(Request, Content, Responses, AsOption), Params).
+    maplist(doc_param(from(Segments,
+                           Request, AsOption, OptionParam,
+                           Content, Responses)), Args, Params).
 
-doc_params(Request, Content, Responses, AsOption) -->
-    doc_request_params(Request),
-    doc_content_param(Content),
-    doc_response_param(Responses),
-    doc_option_param(AsOption).
+doc_param(from(Segments, Request, AsOption, OptionParam,
+               Content, Responses),
+          Arg, Param) :-
+    (   segment_param(Arg, Segments, Param)
+    ;   request_param(Arg, Request, Param)
+    ;   OptionParam == Arg,
+        option_param(AsOption, Param)
+    ;   content_param(Arg, Content, Param)
+    ;   response_param(Arg, Responses, Param)
+    ), !.
+
+segment_param(Arg, Segments, p(Name, Type, Description)) :-
+    member(segment(Type, _, Arg0, Name, Description), Segments),
+    Arg == Arg0, !.
+
+request_param(Arg, Requests, p(Name, Type, Description)) :-
+    member(R, Requests),
+    R =.. [Name,Arg0,Opts],
+    Arg == Arg0, !,
+    memberchk(openapi(Type), Opts),
+    (   memberchk(description(Description), Opts)
+    ->  true
+    ;   Description = ""
+    ).
+
+option_param(AsOption, p(options, list(option), options(Options))) :-
+    phrase(doc_request_params(AsOption), Options).
 
 doc_request_params([]) --> [].
 doc_request_params([H|T]) -->
@@ -953,22 +984,16 @@ doc_request_params([H|T]) -->
     [ p(Name,Type,Description) ],
     doc_request_params(T).
 
-doc_content_param(-) --> [].
-doc_content_param(content(_MediaType, Scheme, _Var, Description)) -->
-    [ p(content, Scheme, Description) ].
+content_param(Arg,
+              content(_MediaType, Scheme, Arg0, Description),
+              p(request_body, Scheme, Description)) :-
+    Arg == Arg0, !.
 
-doc_response_param(Responses) -->
-    { member(response(Code,_MediaType, Scheme, _Var, Description),
-             Responses),
-      between(200, 399, Code),
-      !
-    },
-    [ p(response, Scheme, Description) ].
-
-doc_option_param([]) --> !.
-doc_option_param(AsOption) -->
-    { phrase(doc_request_params(AsOption), Options) },
-    [ p(options, list(option), options(Options)) ].
+response_param(Arg, Responses, p(response, Scheme, Description)) :-
+    member(response(Code,_MediaType, Scheme, Arg0, Description),
+           Responses),
+    Arg == Arg0,
+    between(200, 399, Code), !.
 
 
 		 /*******************************
