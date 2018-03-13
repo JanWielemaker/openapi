@@ -65,7 +65,11 @@
 openapi_server(File, Options) :-
     throw(error(context_error(nodirective, openapi_server(File, Options)), _)).
 
-expand_openapi_server(File, Options, Clauses) :-
+expand_openapi_server(File, Options,
+                      [ (:- discontiguous((openapi_handler/8,
+                                           openapi_doc/2)))
+                      | Clauses
+                      ]) :-
     read_openapi_spec(File, Spec, Options, Options1),
     phrase(server_clauses(Spec, Options1), Clauses).
 
@@ -168,9 +172,10 @@ server_path_clause(Path-Spec, Options) -->
 
 path_handlers([], _Path, _) --> [].
 path_handlers([Method-Spec|T], Path, Options) -->
-    { path_handler(Path, Method, Spec, Fact, Options)
+    { path_handler(Path, Method, Spec, Fact, Options),
+      path_docs(Spec, Docs)
     },
-    [ Fact ],
+    [Fact, Docs],
     path_handlers(T, Path, Options).
 
 %! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
@@ -179,9 +184,8 @@ path_handlers([Method-Spec|T], Path, Options) -->
 path_handler(Path, Method, Spec,
              openapi_handler(Method,
                              PathList, Request, AsOption, OptionParam,
-                             Content, Responses, Handler, Doc),
+                             Content, Responses, Handler),
              Options) :-
-    phrase(path_doc(Spec), Doc),
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
@@ -249,6 +253,14 @@ hp_type(_, _) --> [].
 hp_schema(Spec, Options) -->
     { json_type(Spec, Type, Options) },
     [ openapi(Type) ].
+
+%!  path_docs(+Spec, -Docs) is det.
+%
+%   Generate documentation clauses for an operationID
+
+path_docs(Spec, openapi_doc(OperationID, Docs)) :-
+    atom_string(OperationID, Spec.operationId),
+    phrase(path_doc(Spec), Docs).
 
 %!  path_doc(+Spec)//
 %
@@ -509,6 +521,8 @@ optional_query_params([_|T0], Options, Q) :-
 %   Transform between a Segment string and the Prolog value according to
 %   Type.
 
+:- public segment_value/3.
+
 segment_value(Type, Segment, Prolog) :-
     nonvar(Segment),
     !,
@@ -517,8 +531,6 @@ segment_value(Type, Segment, Prolog) :-
 segment_value(Type, Segment, Prolog) :-
     json_check(Type, Value, Prolog),
     uri_encoded(segment, Value, Segment).
-
-
 
 %!  openapi_read_reply(+Code, +In, -Result) is det.
 %
@@ -554,7 +566,7 @@ openapi_dispatch(M:Request) :-
     M:openapi_handler(Method, Parts,
                       Required, AsOption, OptionParam, Content,
                       Responses,
-                      Handler, _Docs),
+                      Handler),
     append(Required, AsOption, RequestParams),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
