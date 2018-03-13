@@ -2,6 +2,7 @@
 
 :- use_module(library(main)).
 :- use_module(library(apply)).
+:- use_module(library(lists)).
 :- use_module(library(option)).
 :- use_module(library(openapi)).
 
@@ -16,9 +17,28 @@ generate(Options, File) :-
     gen_server(File, Options).
 
 gen_client(File, Options) :-
-    option(client(true), Options), !,
-    openapi_doc(File, client, []).
+    option(client(Client), Options), !,
+    output_options(client(Client), File, Out),
+    append(Options, Out, GenOptions),
+    openapi_doc(File, client, GenOptions).
 
-gen_client(File, Options) :-
-    option(server(true), Options), !,
-    openapi_doc(File, server, []).
+gen_server(File, Options) :-
+    option(server(Server), Options), !,
+    output_options(server(Server), File, Out),
+    append(Options, Out, GenOptions),
+    openapi_doc(File, server, GenOptions).
+
+output_options(client(-), _, []) :-
+    !.
+output_options(server(-), _, []) :-
+    !.
+output_options(client(true), From, [file(Out)]) :-
+    !,
+    file_name_extension(Base, _, From),
+    atomic_list_concat([Base, '_client.pl'], Out).
+output_options(server(true), From, [file(Out)]) :-
+    !,
+    file_name_extension(Base, _, From),
+    atomic_list_concat([Base, '_server.pl'], Out).
+output_options(client(File), _, [file(File)]).
+output_options(server(File), _, [file(File)]).
