@@ -906,6 +906,10 @@ json_type(Spec, Type, _) :-
     atom_string(Type0, TypeS),
     atom_string(Format, FormatS),
     once(api_type(_, Type0, Format, Type)).
+json_type(Spec, array(Type), Options) :-
+    _{type:"array", items:IType} :< Spec,
+    !,
+    json_type(IType, Type, Options).
 json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
     !,
