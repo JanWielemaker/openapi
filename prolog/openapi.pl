@@ -320,9 +320,9 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     path_vars(Parts, PathList, PathBindings),   % TBD: deal with URL encoding
     atom_string(PredName, Spec.operationId),
     (   ParamSpecs = Spec.get(parameters)
-    ->  client_parameters(ParamSpecs, PathBindings, Params0, Query,
+    ->  client_parameters(ParamSpecs, PathBindings,
+                          Params, Query, Optional,
                           CheckParams, Options),
-        optional_client_params(Params0, Params, Optional, Options),
         (   Optional == []
         ->  ClientOptionArg = []
         ;   ClientOptionArg = [ClientOptions]
@@ -330,7 +330,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
         Query = [],
-        CheckParams = true
+        CheckParams = true,
+        ClientOptionArg = []
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     request_body(Content, ContentGoal, OpenOptions),
@@ -356,17 +357,33 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                  close(In))
            ).
 
-client_parameters([], _, [], [], true, _).
+%!  client_parameters(+Spec, +PathBindings,
+%!                    -Params, -Required, -Optional,
+%!                    -Check, +Options)
+
+client_parameters([], _, [], [], [], true, _).
 client_parameters([H|T], PathBindings, [P0|Ps],
-                  [qparam(Name,P0,Type,Opt)|Qs], Check, Options) :-
+                  [qparam(Name,P0,Type,Opt)|Qs], Optional, Check, Options) :-
     _{name:NameS, in:"query"} :< H,
-    !,
     param_optional(H, Opt),
+    \+ ( Opt == optional,
+         \+ option(optional(unbound), Options)
+       ),
+    !,
     param_type(H, Type, Options),
     atom_string(Name, NameS),
-    client_parameters(T, PathBindings, Ps, Qs, Check0, Options),
+    client_parameters(T, PathBindings, Ps, Qs, Optional, Check0, Options),
     mkconj(Check0, true, Check).
-client_parameters([H|T], PathBindings, [P0|Ps], Query, Check, Options) :-
+client_parameters([H|T], PathBindings,
+                  Params, Query, [qparam(Name,_,Type,optional)|OptT],
+                  Check, Options) :-
+    _{name:NameS, in:"query"} :< H,
+    !,
+    param_type(H, Type, Options),
+    atom_string(Name, NameS),
+    client_parameters(T, PathBindings, Params, Query, OptT, Check0, Options),
+    mkconj(Check0, true, Check).
+client_parameters([H|T], PathBindings, [P0|Ps], Query, Opt, Check, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
@@ -375,7 +392,7 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Check, Options) :-
     ->  Check1 = openapi:segment_value(Type, Segment, P0)
     ;   existence_error(path_parameter, Name)
     ),
-    client_parameters(T, PathBindings, Ps, Query, Check0, Options),
+    client_parameters(T, PathBindings, Ps, Query, Opt, Check0, Options),
     mkconj(Check0, Check1, Check).
 
 param_optional(Spec, Optional) :-
@@ -392,14 +409,6 @@ param_type(_Spec, any, _Options).
 mkconj(true, G, G) :- !.
 mkconj(G, true, G) :- !.
 mkconj(G1, G2,  (G1,G2)).
-
-optional_client_params(Params, Params, [], Options) :-
-    option(optional(unbound), Options),
-    !.
-optional_client_params(Params, Args, Options, _) :-
-    partition(is_optional, Params, Options, Args).
-
-is_optional(qparam(_,_,_,optional)).
 
 %!  request_body(+ContentSpec, -Goal, -HTTPOPenOptions) is det.
 

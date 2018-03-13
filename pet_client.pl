@@ -3,9 +3,13 @@
 
 :- openapi_client('examples/petstore', []).
 
-%!  listPets(?Limit, -Pets)
+%!  listPets(-Pets, +Options)
+%
+%   Options:
+%     - limit(+Limit)
+%       Max number of pets to show
 
-%!  createPets(+Pets)
+%!  createPets(+Pets, -Result)
 
 %!  showPetById(+Id, -Pet)
 
