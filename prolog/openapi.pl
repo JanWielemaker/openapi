@@ -803,8 +803,51 @@ json_check(array(Type), In, Out) :-
     ->  maplist(json_check(Type), In, Out)
     ;   must_be(list, In)
     ).
+json_check(oneOf(Types), In, Out) :-
+    (   nonvar(In)
+    ->  append(_, [Type|Rest], Types),
+        catch(json_check(Type, In, Out), _, fail),
+        (   member(T2, Rest),
+            catch(json_check(T2, In, _), _, fail)
+        ->  type_error(oneOf(Types), In)
+        ;   true
+        )
+    ;   append(_, [Type|Rest], Types),
+        catch(json_check(Type, In, Out), _, fail),
+        (   member(T2, Rest),
+            catch(json_check(T2, _, Out), _, fail)
+        ->  type_error(oneOf(Types), Out)
+        ;   true
+        )
+    ).
+json_check(allOf(Types), In, Out) :-
+    (   nonvar(In)
+    ->  maplist(json_check_in_out_type(In), Outs, Types),
+        join_dicts(Outs, Out)
+    ;   maplist(json_check_out_in_type(Out), Ins, Types),
+        join_dicts(Ins, In)
+    ).
+json_check(anyof(Types), In, Out) :-
+    (   member(Type, Types),
+        catch(json_check(Type, In, Out), _, fail)
+    ->  true
+    ;   nonvar(In)
+    ->  type_error(oneOf(Types), In)
+    ;   type_error(oneOf(Types), Out)
+    ).
+json_check(not(Type), In, Out) :-
+    (   \+ catch(json_check(Type, In, Out), _, fail)
+    ->  In = Out
+    ;   (   nonvar(In)
+        ->  type_error(not(Type), In)
+        ;   type_error(not(Type), Out)
+        )
+    ).
 json_check(Type, In, Out) :-
     oas_type(Type, In, Out).
+
+json_check_in_out_type(In, Out, Type) :- json_check(Type, In, Out).
+json_check_out_in_type(Out, In, Type) :- json_check(Type, In, Out).
 
 obj_property_in(In, p(Name, Type, true), Name-Out) :-
     !,
@@ -825,6 +868,12 @@ obj_property_out(Out, p(Name, Type, false), In) :-
         In = (Name-InV)
     ;   In = (-)
     ).
+
+join_dicts([One], One).
+join_dicts([H1,H2|T], Dict) :-
+    H = H1.put(H2),
+    join_dicts([H|T], Dict).
+
 
 :- multifile
     http:convert_parameter/3.
@@ -868,32 +917,12 @@ schema_clauses([H|T], Options) -->
     schema_clauses(T, Options).
 
 schema_clause(Schema-Spec, Options) -->
-    { schema_type(Spec, Type, Options),
+    { json_type(Spec, Type, Options),
       option(base_uri(Base), Options),
       file_directory_name(Base, Dir),
       atomic_list_concat([Dir, '#/components/schemas/', Schema], URL)
     },
     [ openapi:json_schema(URL, Type) ].
-
-schema_type(Spec, object(Props), Options) :-
-    _{required:ReqS, properties:PropSpecs} :< Spec,
-    !,
-    dict_pairs(PropSpecs, _, Pairs),
-    maplist(atom_string, Req, ReqS),
-    maplist(schema_property(Req, Options), Pairs, Props).
-schema_type(Spec, array(Type), Options) :-
-    _{type:"array", items:IType} :< Spec,
-    !,
-    json_type(IType, Type, Options).
-schema_type(Spec, Type, Options) :-
-    json_type(Spec, Type, Options).
-
-schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
-    (   memberchk(Name, Reqs)
-    ->  Req = true
-    ;   Req = false
-    ),
-    json_type(Spec, Type, Options).
 
 %!  json_type(+Spec, -Type, +Options) is det.
 %
@@ -906,10 +935,32 @@ json_type(Spec, Type, _) :-
     atom_string(Type0, TypeS),
     atom_string(Format, FormatS),
     once(api_type(_, Type0, Format, Type)).
+json_type(Spec, object(Props), Options) :-
+    _{required:ReqS, properties:PropSpecs} :< Spec,
+    !,
+    dict_pairs(PropSpecs, _, Pairs),
+    maplist(atom_string, Req, ReqS),
+    maplist(schema_property(Req, Options), Pairs, Props).
 json_type(Spec, array(Type), Options) :-
     _{type:"array", items:IType} :< Spec,
     !,
     json_type(IType, Type, Options).
+json_type(Spec, oneOf(Types), Options) :-
+    _{oneOf:List} :< Spec,
+    !,
+    maplist(opts_json_type(Options), List, Types).
+json_type(Spec, allOf(Types), Options) :-
+    _{allOf:List} :< Spec,
+    !,
+    maplist(opts_json_type(Options), List, Types).
+json_type(Spec, oneOf(Types), Options) :-
+    _{oneOf:List} :< Spec,
+    !,
+    maplist(opts_json_type(Options), List, Types).
+json_type(Spec, not(Type), Options) :-
+    _{not:NSpec} :< Spec,
+    !,
+    json_type(NSpec, Type, Options).
 json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
     !,
@@ -921,6 +972,16 @@ json_type(Spec, url(URL), Options) :-
     option(base_uri(Base), Options),
     file_directory_name(Base, Dir),
     atom_concat(Dir, URLS, URL).
+
+opts_json_type(Options, Spec, Type) :-
+    json_type(Spec, Type, Options).
+
+schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
+    (   memberchk(Name, Reqs)
+    ->  Req = true
+    ;   Req = false
+    ),
+    json_type(Spec, Type, Options).
 
 		 /*******************************
 		 *        DOC GENERATION	*
