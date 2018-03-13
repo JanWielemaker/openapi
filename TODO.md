@@ -10,17 +10,19 @@
 
   - Client
     - Generate client predicates from spec			[OK]
-      - Normal query parameters
-      - Path parameters
-      - Request body
+      - Normal query parameters					[OK]
+      - Path parameters						[OK]
+      - Request body						[OK]
     - Use an option list for optional arguments?
     - Generate PlDoc.
     - Provide reflexive type interface.
-    - Type checking request and response
-    - Deal with empty "OK" responses
-      - 201
-        - May read result from `Location` header
-	- May return the object proper
+    - Type checking
+      - request							[OK]
+      - response
+        - Deal with empty "OK" responses
+	  - 201
+	    - May read result from `Location` header
+	    - May return the object proper
 
   - Testing
     - Is there a comprehensive test suite?
