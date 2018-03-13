@@ -27,8 +27,8 @@ dispatch(Request) :-
 :- dynamic
     pet/2.                                      % ?Id, ?Name
 
-listPets(Limit, Pets) :-
-    api_default(Limit, 100),
+listPets(Pets, Options) :-
+    option(limit(Limit), Options, 100),
     once(findnsols(Limit, _{id:Id, name:Name}, pet(Id, Name), Pets)).
 
 createPets(Pets, status(201)) :-                % Provide Location

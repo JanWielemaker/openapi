@@ -203,13 +203,20 @@ path_handler(Path, Method, Spec,
     Handler =.. [PredName|AllParams].
 
 server_parameters([], _, [], [], [], _).
-server_parameters([H|T], PathB, [R0|Req], AsOption, [P0|Ps], Options) :-
+server_parameters([H|T], PathB, Request, AsOption, Params, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
     atom_string(Name, NameS),
     R0 =.. [Name,P0,Opts],
-    server_parameters(T, PathB, Req, AsOption, Ps, Options).
+    (   Opts = [optional(true)|_],
+        \+ option(optional(unbound), Options)
+    ->  AsOption = [R0|AsOpts],
+        server_parameters(T, PathB, Request, AsOpts, Params, Options)
+    ;   Request = [R0|Req],
+        Params  = [P0|Ps],
+        server_parameters(T, PathB, Req, AsOption, Ps, Options)
+    ).
 server_parameters([H|T], PathB, Req, AsOption, [P0|Ps], Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
