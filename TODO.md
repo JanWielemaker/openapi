@@ -4,7 +4,7 @@
     - Handle errors
     - Integrate OpenAPI GUI tools				[OK]
     - Make some of the type checking controlled by options
-    - Generate the implementation templates
+    - Generate the implementation templates			[OK]
       - Predicate head
       - PlDoc comment
 
@@ -14,7 +14,7 @@
       - Path parameters						[OK]
       - Request body						[OK]
     - Use an option list for optional arguments?		[OK]
-    - Generate PlDoc.
+    - Generate PlDoc.						[OK]
     - Provide reflexive type interface.
     - Type checking
       - request							[OK]
