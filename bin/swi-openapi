@@ -1,0 +1,24 @@
+#!/usr/bin/env swipl
+
+:- use_module(library(main)).
+:- use_module(library(apply)).
+:- use_module(library(option)).
+:- use_module(library(openapi)).
+
+:- initialization(main, main).
+
+main(Argv) :-
+    argv_options(Argv, Files, Options),
+    maplist(generate(Options), Files).
+
+generate(Options, File) :-
+    gen_client(File, Options),
+    gen_server(File, Options).
+
+gen_client(File, Options) :-
+    option(client(true), Options), !,
+    openapi_doc(File, client, []).
+
+gen_client(File, Options) :-
+    option(server(true), Options), !,
+    openapi_doc(File, server, []).
