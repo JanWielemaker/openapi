@@ -179,8 +179,9 @@ path_handlers([Method-Spec|T], Path, Options) -->
 path_handler(Path, Method, Spec,
              openapi_handler(Method,
                              PathList, Request, AsOption, OptionParam,
-                             Content, Responses, Handler),
+                             Content, Responses, Handler, Doc),
              Options) :-
+    phrase(path_doc(Spec), Doc),
     atomic_list_concat(Parts, '/', Path),
     path_vars(Parts, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
@@ -248,6 +249,24 @@ hp_type(_, _) --> [].
 hp_schema(Spec, Options) -->
     { json_type(Spec, Type, Options) },
     [ openapi(Type) ].
+
+%!  path_doc(+Spec)//
+%
+%   Generate a list of documentation properties for Path
+
+path_doc(Spec) -->
+    path_doc(summary, Spec),
+    path_doc(description, Spec),
+    path_doc(tags, Spec).
+
+path_doc(Key, Spec) -->
+    { Value = Spec.get(Key),
+      !,
+      Attr =.. [Key,Value]
+    },
+    [Attr].
+path_doc(_, _) --> [].
+
 
 %!  path_vars(+SegmentSpec, -Segments, -Bindings) is det.
 
@@ -535,7 +554,7 @@ openapi_dispatch(M:Request) :-
     M:openapi_handler(Method, Parts,
                       Required, AsOption, OptionParam, Content,
                       Responses,
-                      Handler),
+                      Handler, _Docs),
     append(Required, AsOption, RequestParams),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
