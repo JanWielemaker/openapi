@@ -55,6 +55,7 @@
 :- use_module(library(http/json)).
 :- use_module(library(http/http_json)).
 :- use_module(library(http/http_parameters)).
+:- use_module(library(http/http_open)).
 
 :- meta_predicate
     openapi_dispatch(:).
@@ -433,7 +434,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                                     Query, Optional, ClientOptions,
                                     URL),
              setup_call_cleanup(
-                 http_open(URL, In,
+                 openapi:http_open(URL, In,
                            [ status_code(Status),
                              method(Method)
                            | OpenOptions
@@ -956,12 +957,15 @@ doc_gen(Stream, File, Clauses, Options) :-
 file_header(Stream, File, Options) :-
     option(mode(client), Options),
     !,
-    format(Stream, ':- use_module(library(openapi)).~n~n', []),
+    format(Stream, ':- use_module(library(openapi)).~n', []),
+    format(Stream, ':- use_module(library(option)).~n~n', []),
     format(Stream, ':- openapi_client(~q, []).~n~n', [File]).
 file_header(Stream, File, Options) :-
     option(mode(server), Options),
     !,
-    format(Stream, ':- use_module(library(openapi)).~n~n', []),
+    format(Stream, ':- use_module(library(openapi)).~n', []),
+    format(Stream, ':- use_module(library(option)).~n', []),
+    format(Stream, ':- use_module(library(debug)).~n~n', []),
     format(Stream, ':- openapi_server(~q, []).~n~n', [File]).
 file_header(_, _, _).
 
