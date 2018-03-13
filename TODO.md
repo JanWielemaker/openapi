@@ -13,7 +13,7 @@
       - Normal query parameters					[OK]
       - Path parameters						[OK]
       - Request body						[OK]
-    - Use an option list for optional arguments?
+    - Use an option list for optional arguments?		[OK]
     - Generate PlDoc.
     - Provide reflexive type interface.
     - Type checking

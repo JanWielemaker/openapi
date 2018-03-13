@@ -71,10 +71,19 @@ expand_openapi_server(File, Options, Clauses) :-
 
 %!  openapi_client(+File, +Options)
 %
-%   Instantiate a REST client given the OpenAPI specification in File.
+%   Instantiate a REST client given the   OpenAPI specification in File.
+%   Options processed:
+%
+%     - optional(+How)
+%     One of `option_list` (default) or `unbound`.  Defines how optional
+%     parameters are handled. By default (`option_list`), the
+%     predicate signature is pred(+RequiredArgs, -Result, +Options).
+%     Using `unbound`, all paramters are handled using positional
+%     arguments and optional arguments may be passed as a variable.
 
 openapi_client(File, Options) :-
-    throw(error(context_error(nodirective, openapi_client(File, Options)), _)).
+    throw(error(context_error(nodirective,
+                              openapi_client(File, Options)), _)).
 
 expand_openapi_client(File, Options, Clauses) :-
     read_openapi_spec(File, Spec, Options, Options1),
@@ -317,7 +326,7 @@ client_handlers([H|T], Path, Options) -->
 
 client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     atomic_list_concat(Parts, '/', PathSpec),
-    path_vars(Parts, PathList, PathBindings),   % TBD: deal with URL encoding
+    path_vars(Parts, PathList, PathBindings),
     atom_string(PredName, Spec.operationId),
     (   ParamSpecs = Spec.get(parameters)
     ->  client_parameters(ParamSpecs, PathBindings,
