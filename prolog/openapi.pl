@@ -212,7 +212,7 @@ http_param_options(Spec, Options) -->
     hp_type(Spec, Options).
 
 hp_optional(Spec) -->
-    { Spec.get(required) == false },
+    { param_optional(Spec, optional) },
     !,
     [optional(true)].
 hp_optional(_) --> [].
@@ -354,14 +354,8 @@ client_parameters([H|T], PathBindings, [P0|Ps],
                   [qparam(Name,P0,Type,Opt)|Qs], Check, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
-    (   H.get(required) == false
-    ->  Opt = optional
-    ;   Opt = required
-    ),
-    (   json_type(H.get(schema), Type, Options)
-    ->  true
-    ;   Type = any
-    ),
+    param_optional(H, Opt),
+    param_type(H, Type, Options),
     atom_string(Name, NameS),
     client_parameters(T, PathBindings, Ps, Qs, Check0, Options),
     mkconj(Check0, true, Check).
@@ -369,12 +363,24 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Check, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
+    param_type(H, Type, Options),
     (   memberchk(Name=Segment, PathBindings)
-    ->  Check1 = uri_encoded(segment, P0, Segment)
+    ->  Check1 = openapi:segment_value(Type, Segment, P0)
     ;   existence_error(path_parameter, Name)
     ),
     client_parameters(T, PathBindings, Ps, Query, Check0, Options),
     mkconj(Check0, Check1, Check).
+
+param_optional(Spec, Optional) :-
+    (   Spec.get(required) == false
+    ->  Optional = optional
+    ;   Optional = required
+    ).
+
+param_type(Spec, Type, Options) :-
+    json_type(Spec.get(schema), Type, Options),
+    !.
+param_type(_Spec, any, _Options).
 
 mkconj(true, G, G) :- !.
 mkconj(G, true, G) :- !.
@@ -415,6 +421,22 @@ client_query_param(qparam(_Name, _PlValue, _Type, optional), _) :-
     !, fail.                                    % leave to convlist/3.
 client_query_param(qparam(_Name, PlValue, Type, required), _) :-
     type_error(Type, PlValue).
+
+%!  segment_value(+Type, ?Segment, ?Prolog) is det.
+%
+%   Transform between a Segment string and the Prolog value according to
+%   Type.
+
+segment_value(Type, Segment, Prolog) :-
+    nonvar(Segment),
+    !,
+    uri_encoded(segment, Value, Segment),
+    json_check(Type, Value, Prolog).
+segment_value(Type, Segment, Prolog) :-
+    json_check(Type, Value, Prolog),
+    uri_encoded(segment, Value, Segment).
+
+
 
 %!  openapi_read_reply(+Code, +In, -Result) is det.
 %
