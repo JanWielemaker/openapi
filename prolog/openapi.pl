@@ -340,6 +340,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         Params = [],
         Query = [],
         CheckParams = true,
+        Optional = [],
         ClientOptionArg = []
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
