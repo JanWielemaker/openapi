@@ -935,8 +935,8 @@ openapi_doc(OperationId, _Options) -->
     doc_args(Data.arguments),
     "\n",
     server_head(OperationId, Data.arguments), " :-",
-    "\n   debug(openapi, \"~p\",
-                [", server_head(OperationId, Data.arguments), "]),",
+    "\n   debug(openapi, \"~p\", [",
+		server_head(OperationId, Data.arguments), "]),",
     "\n   Response = status(404).\n\n".
 
 doc_mode(_:OperationId, Args) -->
