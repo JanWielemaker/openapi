@@ -198,6 +198,7 @@ path_handler(Path, Method, Spec,
     ;   assertion(PathBindings == []),          % TBD: Proper message
         Params = [],
         Request = [],
+        AsOption = [],
         OptionParams = []
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
