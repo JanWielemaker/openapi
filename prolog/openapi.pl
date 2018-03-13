@@ -37,7 +37,7 @@
             openapi_server/2,                   % +File, +Options
             openapi_client/2,                   % +File, +Options
 
-            openapi_doc/0,
+            openapi_doc/3,                      % +File, +Mode, +Options
 
             openapi_read/2                      % +File, -Term
           ]).
@@ -58,7 +58,6 @@
 
 :- meta_predicate
     openapi_dispatch(:).
-:- module_transparent openapi_doc/0.
 
 %!  openapi_server(+File, +Options)
 %
@@ -91,6 +90,12 @@ openapi_client(File, Options) :-
     throw(error(context_error(nodirective,
                               openapi_client(File, Options)), _)).
 
+%!  expand_openapi_client(+File, +Options, -Clauses)
+%
+%   Generate clauses for the client. Currently also generates the server
+%   specification as this allows us to use  the same code for generating
+%   the documentation.
+
 expand_openapi_client(File, Options, Clauses) :-
     read_openapi_spec(File, Spec, Options, Options1),
     phrase(client_clauses(Spec, Options1), Clauses).
@@ -98,7 +103,10 @@ expand_openapi_client(File, Options, Clauses) :-
 %!  read_openapi_spec(+File, -Spec, +Options0, -Options) is det.
 
 read_openapi_spec(File, Spec, Options0, Options) :-
-    prolog_load_context(directory, Dir),
+    (   prolog_load_context(directory, Dir)
+    ->  true
+    ;   Dir = '.'
+    ),
     absolute_file_name(File, Path,
                        [ relative_to(Dir),
                          extensions(['',json,yaml]),
@@ -913,33 +921,54 @@ json_type(Spec, url(URL), Options) :-
 		 *        DOC GENERATION	*
 		 *******************************/
 
-%!  openapi_doc
+%!  openapi_doc(+File, +Mode, +Options) is det.
 %
-%   Write documentation to the current output
+%   Write documentation to the current  output.   Options  are passed to
+%   openapi_server/2. In addition, the following options are processed:
+%
+%     - file(+File)
+%     Dump output to File.
 
-openapi_doc :-
-    context_module(M),
-    (   phrase(openapi_doc(M:_, []), S),
-        format('~s', [S]),
-        fail
-    ;   true
-    ).
+openapi_doc(File, Mode, Options) :-
+    must_be(oneof([client,server]), Mode),
+    read_openapi_spec(File, Spec, Options, Options1),
+    phrase(server_clauses(Spec, Options1), Clauses),
+    setup_call_cleanup(
+        doc_output(Stream, Close, Options),
+        (   doc_data(Clauses, OperationId, Data),
+            phrase(openapi_doc(OperationId, Data, [mode(Mode)|Options]), S),
+            format(Stream, '~s', [S]),
+            fail
+        ;   true
+        ),
+        Close).
 
-%!  openapi_doc(:OperationID, +Options)//
+doc_output(Stream, close(Stream), Options) :-
+    option(file(File), Options),
+    !,
+    open(File, write, Stream).
+doc_output(current_output, true, _).
 
-openapi_doc(OperationId, _Options) -->
-    { doc_data(OperationId, Data) },
+%!  openapi_doc(+OperationID, +Data, +Options)//
+
+openapi_doc(OperationId, Data, Options) -->
     doc_mode(OperationId, Data.arguments),
     "\n%\n",
     doc_description(Data.doc),
     doc_args(Data.arguments),
     "\n",
-    server_head(OperationId, Data.arguments), " :-",
-    "\n   debug(openapi, \"~p\", [",
-		server_head(OperationId, Data.arguments), "]),",
-    "\n   Response = status(404).\n\n".
+    server_skeleton(OperationId, Data.arguments, Options).
 
-doc_mode(_:OperationId, Args) -->
+server_skeleton(OperationId, Args, Options) -->
+    { option(mode(server), Options) },
+    !,
+    server_head(OperationId, Args), " :-",
+    "\n   debug(openapi, \"~p\", [",
+		server_head(OperationId, Args), "]),",
+    "\n   Response = status(404).\n\n".
+server_skeleton(_,_,_) --> [].
+
+doc_mode(OperationId, Args) -->
     "%! ", quoted_atom(OperationId),
     "(", mode_args(Args), ") is det.".
 
@@ -958,7 +987,7 @@ mode_arg(p(Name, _Type, _Descr)) -->
 mode(response) --> !, "-".
 mode(_) --> "+".
 
-server_head(_:OperationId, Args) -->
+server_head(OperationId, Args) -->
     quoted_atom(OperationId),
     "(", arguments(Args), ")".
 
@@ -1044,22 +1073,17 @@ type(Type, List, Tail) :-
     format(codes(List, Tail), '~p', [Type]).
 
 
-%!  doc_data(:OperationID, -Data:dict) is det.
+%!  doc_data(:ServerClauses, -OperationID, -Data:dict) is det.
 %
 %   Get  a  dict  that  contains   all    information   to  produce  the
 %   documentation.
 
-:- meta_predicate
-    doc_data(:, -).
-
-doc_data(M:OperationId,
-         _{arguments:Params,
-           doc:Doc}) :-
-    call(M:openapi_handler(_Method, _PathList, Segments,
+doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}) :-
+    member(openapi_handler(_Method, _PathList, Segments,
                            Request, AsOption, OptionParam,
-                           Content, Responses, Handler)),
+                           Content, Responses, Handler), Clauses),
     Handler =.. [OperationId|Args],
-    call(M:openapi_doc(OperationId, Doc)),
+    memberchk(openapi_doc(OperationId, Doc), Clauses),
     maplist(doc_param(from(Segments,
                            Request, AsOption, OptionParam,
                            Content, Responses)), Args, Params).
