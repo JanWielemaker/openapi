@@ -303,8 +303,8 @@ path_vars([H|T0], [H|T], Bindings) :-
 %! content_parameter(+Method, +Spec, -Content,
 %!                   +Params0, -Params, +Options) is det.
 %
-%   @tbd The post may contain requestBody that specifies the content
-%   type and optional schema.
+%  If there is a request body, add it to the parameter list and return a
+%  specification for openapi_dispatch/1 in Content.
 
 content_parameter(Method, Spec, content(MediaType, Schema, Var, Descr),
                   Params, AllParams, Options) :-
@@ -333,13 +333,20 @@ request_content_type(Spec, MediaType, Schema, Options) :-
 
 %!  response(+ResultVar, +Options, +ResponsePair, -Response) is det.
 
-response(Result, Options, CodeA-Spec, response(Code, MediaType, Type, Result)) :-
+response(Result, Options, CodeA-Spec,
+         response(Code, MediaType, Type, Result, Descr)) :-
     response_code(CodeA, Code),
+    response_description(Spec, Descr),
     content_type(Spec, MediaType, Type, Options).
 
 response_code(default, _) :- !.
 response_code(A, N) :-
     to_number(A, N).
+
+response_description(Spec, Descr) :-
+    Descr = Spec.get(description),
+    !.
+response_description(_, "") .
 
 content_type(Spec, 'application/json', Type, Options) :-
     Content = Spec.get(content),
@@ -617,14 +624,15 @@ request_body(content('application/json', Type, Body, _Descr), Request) :-
 %
 %   Formulate the HTTP request from a term.
 %
-%   @arg Responses is a list response(Code, MediaType, Type, Reply),
-%   where `Reply` is the variable that is bound by the use handler.
+%   @arg Responses is a  list   response(Code,  MediaType,  Type, Reply,
+%   Description), where `Reply` is the variable that is bound by the use
+%   handler.
 
 openapi_reply(Responses) :-
     Responses = [R0|_],
     arg(4, R0, Reply),
     reply_status(Reply, Code, Data),
-    memberchk(response(Code, MediaType, Type, _), Responses),
+    memberchk(response(Code, MediaType, Type, _, _Descr), Responses),
     openapi_reply(Code, MediaType, Type, Data).
 
 reply_status(Var, _, _) :-
@@ -943,7 +951,8 @@ doc_content_param(content(_MediaType, Scheme, _Var, Description)) -->
     [ p(content, Scheme, Description) ].
 
 doc_response_param(Responses) -->
-    { member(response(Code,_MediaType, Scheme, _Var), Responses),
+    { member(response(Code,_MediaType, Scheme, _Var, Description),
+             Responses),
       between(200, 399, Code),
       !
     },
