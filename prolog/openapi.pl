@@ -1206,14 +1206,20 @@ doc_description(Doc) -->
     lines(Lines, "%  "),
     "%\n".
 doc_description(Doc) -->
+    { memberchk(description(Desc), Doc),
+      split_string(Desc, "\n", "", Lines)
+    }, !,
+    lines(Lines, "%  "),
+    "%\n".
+doc_description(Doc) -->
     { memberchk(summary(Summary), Doc)
     }, !,
     "%  ", atom(Summary), "\n",
     "%\n".
 doc_description(_) -->  [].
 
-lines([], _) --> "\n".
-lines([H|T], Prefix) --> atom(Prefix), atom(H), lines(T, Prefix).
+lines([], _) --> [].
+lines([H|T], Prefix) --> atom(Prefix), atom(H), "\n", lines(T, Prefix).
 
 doc_args([]) --> [].
 doc_args([H|T]) --> doc_arg(H), doc_args(T).
