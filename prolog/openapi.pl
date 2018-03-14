@@ -850,6 +850,12 @@ json_check(url(URL), In, Out) :-
     !,
     json_schema(URL, Type),
     json_check(Type, In, Out).
+json_check(object, In, Out) :-
+    In = Out,
+    (   is_dict(In, _)
+    ->  true
+    ;   type_error(object, In)
+    ).
 json_check(object(Properties), In, Out) :-
     !,
     (   nonvar(In)
@@ -1015,6 +1021,9 @@ json_type(Spec, object(Props), Options) :-
     dict_pairs(PropSpecs, _, Pairs),
     maplist(atom_string, Req, ReqS),
     maplist(schema_property(Req, Options), Pairs, Props).
+json_type(Spec, object, _Options) :-
+    _{type:"object"} :< Spec,
+    !.
 json_type(Spec, array(Type), Options) :-
     _{type:"array", items:IType} :< Spec,
     !,
