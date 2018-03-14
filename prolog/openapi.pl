@@ -1030,9 +1030,58 @@ file_header(Stream, File, Options) :-
     !,
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n', []),
-    format(Stream, ':- use_module(library(debug)).~n~n', []),
+    format(Stream, ':- use_module(library(debug)).~n', []),
+    server_header(Stream, File, Options),
+    format(Stream, '~n', []),
     format(Stream, ':- openapi_server(~q, []).~n~n', [File]).
 file_header(_, _, _).
+
+server_header(Stream, File, Options) :-
+    (   option(httpd(true), Options)
+    ;   option(ui(true), Options)
+    ),
+    !,
+    format(Stream, ':- use_module(library(http/thread_httpd)).~n', []),
+    (   option(ui(true), Options)
+    ->  server_ui(Stream, File, Options)
+    ;   option(httpd(true), Options)
+    ->  server_restonly(Stream, Options)
+    ;   true
+    ).
+server_header(_,_,_).
+
+server_ui(Stream, File, _Options) :-
+    format(Stream, ':- use_module(library(http/http_dispatch)).~n', []),
+    format(Stream, ':- use_module(library(swagger_ui)).~n', []),
+    format(Stream, '
+:- http_handler(root(.),
+                http_redirect(see_other, root(\'swagger_ui\')),
+                []).
+:- http_handler(root(\'swagger.yaml\'),
+                http_reply_file(~q, []),
+                [id(swagger_config)]).
+
+server(Port) :-
+    http_server(dispatch,
+                [ port(Port)
+                ]).
+
+dispatch(Request) :-
+    openapi_dispatch(Request),
+    !.
+dispatch(Request) :-
+    http_dispatch(Request).
+
+', [File]).
+
+server_restonly(Stream, _Options) :-
+    format(Stream, '
+server(Port) :-
+    http_server(openapi_dispatch,
+                [ port(Port)
+                ]).
+
+', []).
 
 %!  openapi_doc(+OperationID, +Data, +Options)//
 
@@ -1154,6 +1203,8 @@ type(url(URL)) -->
     !,
     { file_base_name(URL, TypeName) },
     atom(TypeName).
+type(array(Type)) --> !,
+    "array(", type(Type), ")".
 type(Type, List, Tail) :-
     format(codes(List, Tail), '~p', [Type]).
 

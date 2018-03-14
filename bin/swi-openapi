@@ -61,6 +61,11 @@ setup_debug(Options) :-
 
 usage :-
     current_prolog_flag(os_argv, [_,Exe|_]),
-    format(user_error, 'Usage: ~w [options] file ...~n~n', [Exe]),
-    format(user_error, '  --client[=file]     Generate client~n', []),
-    format(user_error, '  --server[=file]     Generate server~n', []).
+    format(user_error, 'Usage: ~w [options] file ...~n', [Exe]),
+    format(user_error, '
+  --client[=file]     Generate client
+  --server[=file]     Generate server
+  --ui		      Include Swagger UI (implies --httpd)
+  --httpd             Include REST HTTP server
+', []).
+
