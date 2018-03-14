@@ -1097,9 +1097,9 @@ server_skeleton(OperationId, Args, Options) -->
     { option(mode(server), Options) },
     !,
     server_head(OperationId, Args), " :-",
-    "\n   debug(openapi, \"~p\", [",
-		server_head(OperationId, Args), "]),",
-    "\n   Response = status(404).\n\n".
+    "\n    debug(openapi, \"~p\", [",
+		 server_head(OperationId, Args), "]),",
+    "\n    Response = status(404).\n\n".
 server_skeleton(_,_,_) --> [].
 
 doc_mode(OperationId, Args) -->
