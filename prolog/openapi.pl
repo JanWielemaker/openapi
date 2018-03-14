@@ -531,9 +531,33 @@ assemble_query(Module, Path, QParams, QOptional, QOptions, URL) :-
     append(QueryFromArgs, QueryFromOptions, Query),
     (   Query == []
     ->  atomics_to_string([ServerBase, Path], URL)
-    ;   uri_query_components(QueryString, Query),
+    ;   phrase(array_query(Query), ArrayQuery),
+        uri_query_components(QueryString, ArrayQuery),
         atomics_to_string([ServerBase, Path, "?", QueryString], URL)
     ).
+
+%!  array_query(Query)//
+%
+%   Rewrite Name=List into Name=E1, Name=E2,  ... to support array(Type)
+%   for parameters passed as queries.
+
+array_query([]) --> [].
+array_query([Name=Value|T]) -->
+    (   {is_list(Value)}
+    ->  repeat_query(Value, Name)
+    ;   [Name=Value]
+    ),
+    array_query(T).
+
+repeat_query([], _) --> [].
+repeat_query([H|T], Name) -->
+    [ Name=H ],
+    repeat_query(T, Name).
+
+%!  client_query_param(+Spec, -QueryElement) is det.
+%
+%   Perform type validation and  transformation   for  the client Prolog
+%   value to something suitable to pass onto uri_query_components/2.
 
 client_query_param(qparam(Name, PlValue, Type, _Required),
                    Name = Value) :-
@@ -806,7 +830,7 @@ json_check(array(Type), In, Out) :-
     ->  maplist(json_check(Type), In, Out)
     ;   is_list(Out)
     ->  maplist(json_check(Type), In, Out)
-    ;   must_be(list, In)
+    ;   must_be(list, In, Out)
     ).
 json_check(oneOf(Types), In, Out) :-
     (   nonvar(In)
@@ -879,6 +903,15 @@ join_dicts([H1,H2|T], Dict) :-
     H = H1.put(H2),
     join_dicts([H|T], Dict).
 
+%!  must_be(+Type, ?In, ?Out) is det.
+%
+%   Support bi-directional type check for json_check/3.
+
+must_be(Type, In, Out) :-
+    (   nonvar(In)
+    ->  must_be(Type, In)
+    ;   must_be(Type, Out)
+    ).
 
 :- multifile
     http:convert_parameter/3.
