@@ -95,8 +95,7 @@ pet(Id, Response) :-
     ->  Response = _{id:Id, name:Name, tag:Tag}
     ).
 
-find_pet(Tags, Pet) :-
-    var(Tags),
+find_pet([], Pet) :-
     !,
     pet(_, Pet).
 find_pet(Tags, Pet) :-
