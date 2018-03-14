@@ -263,8 +263,13 @@ hp_type(Spec, Options) -->
 hp_type(_, _) --> [].
 
 hp_schema(Spec, Options) -->
-    { json_type(Spec, Type, Options) },
-    [ openapi(Type) ].
+    { json_type(Spec, Type, Options),
+      json_param_type(Type, ParmType)
+    },
+    [ ParmType ].
+
+json_param_type(array(Type), list(openapi(Type))) :- !.
+json_param_type(Type, openapi(Type)).
 
 hp_description(Spec) -->
     { Descr = Spec.get(description) },
@@ -1243,11 +1248,18 @@ request_param(Arg, Requests, p(Name, Type, Description)) :-
     member(R, Requests),
     R =.. [Name,Arg0,Opts],
     Arg == Arg0, !,
-    memberchk(openapi(Type), Opts),
+    param_json_type(Opts, Type),
     (   memberchk(description(Description), Opts)
     ->  true
     ;   Description = ""
     ).
+
+param_json_type(Opts, Type) :-
+    memberchk(openapi(Type), Opts),
+    !.
+param_json_type(Opts, Type) :-
+    memberchk(list(openapi(Type0)), Opts),
+    Type = array(Type0).
 
 option_param(AsOption, p(options, list(option), options(Options))) :-
     phrase(doc_request_params(AsOption), Options).
@@ -1255,7 +1267,7 @@ option_param(AsOption, p(options, list(option), options(Options))) :-
 doc_request_params([]) --> [].
 doc_request_params([H|T]) -->
     { H =.. [Name,_Var,Options],
-      memberchk(openapi(Type), Options),
+      param_json_type(Options, Type),
       (   memberchk(description(Description), Options)
       ->  true
       ;   Description = ""
