@@ -69,7 +69,8 @@ openapi_server(File, Options) :-
 
 expand_openapi_server(File, Options,
                       [ (:- discontiguous((openapi_handler/9,
-                                           openapi_doc/2)))
+                                           openapi_doc/2,
+                                           openapi_error_hook/3)))
                       | Clauses
                       ]) :-
     read_openapi_spec(File, Spec, Options, Options1),
@@ -625,19 +626,35 @@ openapi_dispatch(M:Request) :-
     memberchk(path(FullPath), Request),
     memberchk(method(Method), Request),
     M:openapi_root(Root),
-    !,
     atom_concat(Root, Path, FullPath),
     atomic_list_concat(Parts, '/', Path),
     M:openapi_handler(Method, Parts, Segments,
                       Required, AsOption, OptionParam, Content,
                       Responses,
                       Handler),
+    !,
+    (   catch(openapi_run(M:Request,
+                          Segments,
+                          Required, AsOption, OptionParam, Content,
+                          Responses,
+                          Handler),
+              Error,
+              openapi_error(M, Error, Responses))
+    ->  true
+    ;   openapi_error(M, failed, Responses)
+    ).
+
+openapi_run(Module:Request,
+            Segments,
+            Required, AsOption, OptionParam, Content,
+            Responses,
+            Handler) :-
     maplist(segment_parameter, Segments),
     append(Required, AsOption, RequestParams),
     http_parameters(Request, RequestParams),
     request_body(Content, Request),
     server_handler_options(AsOption, OptionParam),
-    call(M:Handler),
+    call(Module:Handler),
     openapi_reply(Responses).
 
 segment_parameter(segment(Type, Segment, Value, _Name, _Description)) :-
@@ -698,6 +715,25 @@ openapi_reply(Code, 'application/json', Type, Data) :-
 openapi_reply(Code, MediaType, _, '') :-
     format('Status: ~d~n', [Code]),
     format('Content-type: ~w~n~n', [MediaType]).
+
+%!  openapi_error(+Module, +Error, +Responses) is det.
+%
+%   An error happened while converting the  input arguments, running the
+%   implementation or converting the output arguments.
+%
+%   @arg Module is the (server) module
+%   @arg Error is the exception or the atom `failed` if the body
+%        execution failed.
+%   @arg Responses are the declared valid responses.
+
+openapi_error(Module, Error, Responses) :-
+    call(Module:openapi_error_hook(Error, Reply, Responses)),
+    Responses = [R0|_],
+    arg(4, R0, Reply),
+    openapi_reply(Responses),
+    !.
+openapi_error(_Module, Error, _Responses) :-
+    throw(Error).
 
 
 		 /*******************************
