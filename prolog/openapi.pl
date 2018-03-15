@@ -49,6 +49,7 @@
 :- use_module(library(base64)).
 :- use_module(library(sgml)).
 :- use_module(library(lists)).
+:- use_module(library(pairs)).
 :- use_module(library(process)).
 :- use_module(library(uri)).
 :- use_module(library(dcg/basics)).
@@ -853,19 +854,19 @@ json_check(url(URL), In, Out) :-
 json_check(object, In, Out) :-
     !,
     In = Out,
-    (   is_dict(In, _)
+    (   is_json_object(In)
     ->  true
     ;   type_error(object, In)
     ).
 json_check(object(Properties), In, Out) :-
     !,
     (   nonvar(In)
-    ->  maplist(obj_property_in(In), Properties, Pairs0),
-        exclude(==(-), Pairs0, Pairs),
-        dict_pairs(Out, _, Pairs)
-    ;   maplist(obj_property_out(Out), Properties, Pairs0),
-        exclude(==(-), Pairs0, Pairs),
-        dict_pairs(In, _, Pairs)
+    ->  json_object_pairs(In, InPairs),
+        obj_properties_in(InPairs, Properties, OutPairs),
+        dict_pairs(Out, _, OutPairs)
+    ;   json_object_pairs(Out, OutPairs),
+        obj_properties_out(OutPairs, Properties, InPairs),
+        dict_pairs(In, _, InPairs)
     ).
 json_check(array(Type), In, Out) :-
     !,
@@ -921,25 +922,89 @@ json_check(Type, In, Out) :-
 json_check_in_out_type(In, Out, Type) :- json_check(Type, In, Out).
 json_check_out_in_type(Out, In, Type) :- json_check(Type, In, Out).
 
-obj_property_in(In, p(Name, Type, true), Name-Out) :-
+%!  is_json_object(@Term) is semidet.
+%
+%   True when Term can be used as a JSON object mapping.
+
+is_json_object(Dict) :-
+    is_dict(Dict, _), !.
+is_json_object(json(Attrs)) :-
+    is_list(Attrs),
+    maplist(name_value, Attrs).
+
+name_value(Name = _Value) :- atomic(Name).
+name_value(Term) :- compound(Term), compound_name_arity(Term, _, 1).
+
+json_object_pairs(Dict, Pairs) :-
+    is_dict(Dict, _),
+    dict_pairs(Dict, _, Pairs).
+json_object_pairs(json(List), Pairs) :-
+    is_list(List),
+    maplist(name_value, List, Keys, Values),
+    pairs_keys_values(Pairs0, Keys, Values),
+    keysort(Pairs0, Pairs).
+
+name_value(Name - Value, Name, Value) :- !.
+name_value(Name = Value, Name, Value) :- !.
+name_value(Term, Name, Value) :- Term =.. [Name,Value].
+
+%!  obj_properties_in(+InPairs, +Spec, -OutPairs)
+
+obj_properties_in([], Spec, []) :-
     !,
-    json_check(Type, In.Name, Out).
-obj_property_in(In, p(Name, Type, false), Out) :-
-    (   InV = In.get(Name)
-    ->  json_check(Type, InV, OutV),
-        Out = (Name-OutV)
-    ;   Out = (-)
+    check_missing(Spec).
+obj_properties_in(List, [], List) :-
+    !.
+obj_properties_in([NV|T0], PL, [NV|T]) :-
+    PL = [p(P,_,_)|_],
+    NV = N-_,
+    N @< P,
+    !,
+    obj_properties_in(T0, PL, T).
+obj_properties_in([N-V0|T0], [p(N,Type,_Req)|PT], [N-V|T]) :-
+    !,
+    json_check(Type, V0, V),
+    obj_properties_in(T0, PT, T).
+obj_properties_in(T0, [p(N,_Type,Req)|PT], T) :-
+    (   Req == false
+    ->  obj_properties_in(T0, PT, T)
+    ;   existence_error(json_property, N)
     ).
 
-obj_property_out(Out, p(Name, Type, true), Name-In) :-
-    !,
-    json_check(Type, In, Out.Name).
-obj_property_out(Out, p(Name, Type, false), In) :-
-    (   OutV = Out.get(Name)
-    ->  json_check(Type, InV, OutV),
-        In = (Name-InV)
-    ;   In = (-)
+check_missing([]).
+check_missing([p(N,_Type,Req)|T]) :-
+    (   Req == false
+    ->  check_missing(T)
+    ;   existence_error(json_property, N)
     ).
+
+%!  obj_properties_out(+OutPairs, +Spec, -InPairs)
+
+obj_properties_out([], Spec, []) :-
+    !,
+    check_missing(Spec).
+obj_properties_out(List, [], List) :-
+    !.
+obj_properties_out([NV|T0], PL, [NV|T]) :-
+    PL = [p(P,_,_)|_],
+    NV = N-_,
+    N @< P,
+    !,
+    obj_properties_out(T0, PL, T).
+obj_properties_out([N-V0|T0], [p(N,Type,_Req)|PT], [N-V|T]) :-
+    !,
+    json_check(Type, V, V0),
+    obj_properties_out(T0, PT, T).
+obj_properties_out(T0, [p(N,_Type,Req)|PT], T) :-
+    (   Req == false
+    ->  obj_properties_out(T0, PT, T)
+    ;   existence_error(json_property, N)
+    ).
+
+%!  join_dicts(+Dicts, -Dict) is det.
+%
+%   Create a dict from a list of   dicts, containing the joined keys. If
+%   there are key duplicates, the last remains.
 
 join_dicts([One], One).
 join_dicts([H1,H2|T], Dict) :-
@@ -962,13 +1027,13 @@ must_be(Type, In, Out) :-
 http:convert_parameter(openapi(Type), In, Out) :-
     json_check(Type, In, Out).
 
-%!  json_schema(URL, Spec)
+%!  json_schema(?URL, ?Spec)
 %
 %   Spec is one of
 %
 %     - array(ItemType)
 %     - object(Properties)
-%       Properties is a list of
+%       Properties is an ordered list of
 %       - p(Name, Type, Required)
 %     - A type as defined by oas_type/3.
 %     - url(URL)
@@ -1021,7 +1086,8 @@ json_type(Spec, object(Props), Options) :-
     !,
     dict_pairs(PropSpecs, _, Pairs),
     maplist(atom_string, Req, ReqS),
-    maplist(schema_property(Req, Options), Pairs, Props).
+    maplist(schema_property(Req, Options), Pairs, Props0),
+    sort(Props0, Props).
 json_type(Spec, object, _Options) :-
     _{type:"object"} :< Spec,
     !.
