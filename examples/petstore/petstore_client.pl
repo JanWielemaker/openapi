@@ -37,3 +37,9 @@ fill_db :-
 add_pet(pet(Name, _Sort, _Gender), N, N2) :-
     N2 is N + 1,
     createPets([_{id:N, name:Name}], _).
+
+fill(N) :-
+    forall(between(1, N, Id),
+           (   atom_concat('Bello_', Id, Name),
+               createPets([_{id:Id, name:Name}], _)
+           )).
