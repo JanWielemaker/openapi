@@ -28,14 +28,12 @@
 %  @arg Response Pet
 %       pet response
 
-%! deletePet(+Id, -Response) is det.
+%! deletePet(+Id) is det.
 %
 %  deletes a single pet based on the ID supplied
 %
 %  @arg Id int64
 %       ID of pet to delete
-%  @arg Response -
-%       pet deleted
 
 %! 'find pet by id'(+Id, -Response) is det.
 %
