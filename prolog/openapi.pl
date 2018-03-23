@@ -388,6 +388,19 @@ content_type(_Spec, media(application/json, []), -, _).
 		 *       CLIENT COMPILER	*
 		 *******************************/
 
+%!  client_clauses(+JSONTerm, +Options)//
+%
+%   Generate clauses for the client.  The generated clauses are:
+%
+%     - openapi_server(URL)
+%       One or more clauses describing the location of the server
+%       as defined in the Swagger file.
+%     - Clauses that call the REST methods.  The name is the
+%       `operationId` described in the Swagger file.  The arguments
+%       are defined by the parameters and response from the
+%       Swagger file.
+%     - Clauses that define the JSON schema types.
+
 client_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
@@ -437,15 +450,18 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     request_body(Content, ContentGoal, OpenOptions),
-    append(Params1, [Result|ClientOptionArg], AllParams),
+    dict_pairs(Spec.responses, _, ResPairs),
+    maplist(response(Result, Options), ResPairs, Responses),
+    (   response_has_data(Responses)
+    ->  append(Params1, [Result|ClientOptionArg], AllParams)
+    ;   append(Params1, ClientOptionArg, AllParams)
+    ),
     prolog_load_context(module, Module),
     (   PathBindings == []
     ->  Path = PathSpec,
         PathGoal = true
     ;   PathGoal = atomic_list_concat(PathList, '/', Path)
     ),
-    dict_pairs(Spec.responses, _, ResPairs),
-    maplist(response(Result, Options), ResPairs, Responses),
     Head =.. [PredName|AllParams],
     Body = ( CheckParams, PathGoal, ContentGoal,
              openapi:assemble_query(Module, Path,
@@ -463,6 +479,21 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                                             In, Result),
                  close(In))
            ).
+
+%!  response_has_data(Responses) is semidet.
+%
+%   True if the request (may) return data. This   is not the case if the
+%   only responses are 204 (no content) or   error codes that are mapped
+%   to exceptions.
+
+response_has_data(Responses) :-
+    maplist(arg(1), Responses, Codes),
+    member(Code, Codes),
+    \+ code_has_no_data(Code), !.
+
+code_has_no_data(Code) :-
+    var(Code).                                  % errors
+code_has_no_data(204).                          % No content
 
 %!  client_parameters(+Spec, +PathBindings,
 %!                    -Params, -Required, -Optional,
@@ -1206,7 +1237,7 @@ doc_output(current_output, true, _).
 
 doc_gen(Stream, File, Clauses, Options) :-
     file_header(Stream, File, Options),
-    forall(doc_data(Clauses, OperationId, Data),
+    forall(doc_data(Clauses, OperationId, Data, Options),
            (   phrase(openapi_doc(OperationId, Data, Options), S),
                format(Stream, '~s', [S]),
                fail
@@ -1409,12 +1440,12 @@ type(Type, List, Tail) :-
     format(codes(List, Tail), '~p', [Type]).
 
 
-%!  doc_data(:ServerClauses, -OperationID, -Data:dict) is det.
+%!  doc_data(:ServerClauses, -OperationID, -Data:dict, +Options) is det.
 %
 %   Get  a  dict  that  contains   all    information   to  produce  the
 %   documentation.
 
-doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}) :-
+doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}, Options) :-
     member(openapi_handler(_Method, _PathList, Segments,
                            Request, AsOption, OptionParam,
                            Content, Responses, Handler), Clauses),
@@ -1422,17 +1453,18 @@ doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}) :-
     memberchk(openapi_doc(OperationId, Doc), Clauses),
     maplist(doc_param(from(Segments,
                            Request, AsOption, OptionParam,
-                           Content, Responses)), Args, Params).
+                           Content, Responses), Options), Args, Params0),
+    exclude(==(-), Params0, Params).
 
 doc_param(from(Segments, Request, AsOption, OptionParam,
-               Content, Responses),
+               Content, Responses), Options,
           Arg, Param) :-
     (   segment_param(Arg, Segments, Param)
     ;   request_param(Arg, Request, Param)
     ;   OptionParam == Arg,
         option_param(AsOption, Param)
     ;   content_param(Arg, Content, Param)
-    ;   response_param(Arg, Responses, Param)
+    ;   response_param(Arg, Responses, Param, Options)
     ), !.
 
 segment_param(Arg, Segments, p(Name, Type, Description)) :-
@@ -1476,11 +1508,20 @@ content_param(Arg,
               p(request_body, Scheme, Description)) :-
     Arg == Arg0, !.
 
-response_param(Arg, Responses, p(response, Scheme, Description)) :-
+response_param(Arg, Responses, -, Options) :-
+    is_reponse_arg(Arg, Responses),
+    option(mode(client), Options),
+    \+ response_has_data(Responses), !.
+response_param(Arg, Responses, p(response, Scheme, Description), _Options) :-
     member(response(Code,_As,_MediaType, Scheme, Arg0, Description),
            Responses),
     Arg == Arg0,
     between(200, 399, Code), !.
+
+is_reponse_arg(Arg, Responses) :-
+    member(R, Responses),
+    arg(5, R, Arg0),
+    Arg == Arg0.
 
 
 		 /*******************************
