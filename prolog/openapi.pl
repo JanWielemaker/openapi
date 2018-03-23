@@ -438,7 +438,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
              setup_call_cleanup(
                  openapi:http_open(URL, In,
                            [ status_code(Status),
-                             method(Method)
+                             method(Method),
+                             request_header(accept = 'application/json')
                            | OpenOptions
                            ]),
                  openapi:openapi_read_reply(Status, In, Result),
