@@ -50,7 +50,7 @@
 :- use_module(library(sgml)).
 :- use_module(library(lists)).
 :- use_module(library(pairs)).
-:- use_module(library(process)).
+:- use_module(library(yaml)).
 :- use_module(library(uri)).
 :- use_module(library(dcg/basics)).
 :- use_module(library(http/json)).
@@ -122,18 +122,13 @@ read_openapi_spec(File, Spec, Options0, Options) :-
 %!  openapi_read(+File, -Term) is det.
 %
 %   Read an OpenAPI specification file.
-%
-%   @tbd:  we  need  a  native  YAML   parser  rather  than  relying  on
-%   `yaml2json`.
 
 openapi_read(File, Term) :-
     file_name_extension(_, yaml, File),
     !,
     setup_call_cleanup(
-        process_create(path(yaml2json), [file(File)],
-                       [ stdout(pipe(In))
-                       ]),
-        json_read_dict(In, Term),
+        open(File, read, In, [encoding(utf8)]),
+        yaml_read(In, Term),
         close(In)).
 openapi_read(File, Term) :-
     setup_call_cleanup(
