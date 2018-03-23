@@ -57,6 +57,7 @@
 :- use_module(library(http/http_json)).
 :- use_module(library(http/http_parameters)).
 :- use_module(library(http/http_open)).
+:- use_module(library(http/http_header)).
 
 :- meta_predicate
     openapi_dispatch(:).
@@ -344,15 +345,28 @@ request_content_type(Spec, MediaType, Schema, Options) :-
     content_type(Body, MediaType, Schema, Options).
 
 %!  response(+ResultVar, +Options, +ResponsePair, -Response) is det.
+%
+%   Describe the valid responses.  Response is a term
+%
+%     - response(Code, As, MediaType, Type, Result, Descr)
+%       Where
+%       - Code is the numeric HTTP status code or a variable for
+%         `default`
+%       - As describes how to handle the code.  Currently one of
+%         `data` or `error`
+%       - MediaType is the expected response type
+%       - Type is the (JSON) schema describing a JSON result
+%       - Result is the result variable
+%       - Descr is the description of the response body.
 
 response(Result, Options, CodeA-Spec,
-         response(Code, MediaType, Type, Result, Descr)) :-
-    response_code(CodeA, Code),
+         response(Code, As, MediaType, Type, Result, Descr)) :-
+    response_code(CodeA, Code, As),
     response_description(Spec, Descr),
     content_type(Spec, MediaType, Type, Options).
 
-response_code(default, _) :- !.
-response_code(A, N) :-
+response_code(default, _, error) :- !.
+response_code(A, N, data) :-
     to_number(A, N).
 
 response_description(Spec, Descr) :-
@@ -360,7 +374,7 @@ response_description(Spec, Descr) :-
     !.
 response_description(_, "") .
 
-content_type(Spec, 'application/json', Type, Options) :-
+content_type(Spec, media(application/json, []), Type, Options) :-
     Content = Spec.get(content),
     Media = Content.get('application/json'),
     !,
@@ -368,7 +382,7 @@ content_type(Spec, 'application/json', Type, Options) :-
     ->  json_type(Schema, Type, Options)
     ;   Type = (-)
     ).
-content_type(_Spec, 'application/json', -, _).
+content_type(_Spec, media(application/json, []), -, _).
 
 		 /*******************************
 		 *       CLIENT COMPILER	*
@@ -430,6 +444,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         PathGoal = true
     ;   PathGoal = atomic_list_concat(PathList, '/', Path)
     ),
+    dict_pairs(Spec.responses, _, ResPairs),
+    maplist(response(Result, Options), ResPairs, Responses),
     Head =.. [PredName|AllParams],
     Body = ( CheckParams, PathGoal, ContentGoal,
              openapi:assemble_query(Module, Path,
@@ -439,10 +455,12 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                  openapi:http_open(URL, In,
                            [ status_code(Status),
                              method(Method),
+                             header(content_type, ContentType),
                              request_header(accept = 'application/json')
                            | OpenOptions
                            ]),
-                 openapi:openapi_read_reply(Status, In, Result),
+                 openapi:openapi_read_reply(Status, ContentType, Responses,
+                                            In, Result),
                  close(In))
            ).
 
@@ -508,7 +526,7 @@ mkconj(G1, G2,  (G1,G2)).
 %
 %   Translate the request body into options for http_open/3.
 
-request_body(content('application/json', Schema, InVar, _Descr),
+request_body(content(media(application/json,_), Schema, InVar, _Descr),
              openapi:json_check(Schema, OutVar, InVar),
              [ post(json(OutVar))
              ]) :-
@@ -595,15 +613,41 @@ segment_value(Type, Segment, Prolog) :-
     json_check(Type, Value, Prolog),
     uri_encoded(segment, Value, Segment).
 
-%!  openapi_read_reply(+Code, +In, -Result) is det.
+%!  openapi_read_reply(+Code, +ContentType, +Responses, +In, -Result) is det.
 %
 %   Handle the reply at the client side.
 
-:- public openapi_read_reply/3.
+:- public openapi_read_reply/5.
 
-openapi_read_reply(Code, In, Result) :-
-    debug(openapi(reply), 'Got code ~p', [Code]),
-    json_read_dict(In, Result, []).
+openapi_read_reply(Code, ContentType, Responses, In, Result) :-
+    debug(openapi(reply), 'Got code ~p; type: ~p; response schemas: ~p',
+          [Code, ContentType, Responses]),
+    http_parse_header_value(content_type, ContentType, ParsedContentType),
+    (   memberchk(response(Code, As, ExpectedContentType, Type, _Result, _Comment),
+                  Responses)
+    ->  true
+    ;   maplist(arg(1), Responses, ExCodes),
+        must_be(oneof(ExCodes), Code)
+    ),
+    content_matches(ExpectedContentType, ParsedContentType, ProcessType),
+    read_reply(ProcessType, Type, As, Code, In, Result).
+
+content_matches(ContentType, ContentType, ContentType) :- !.
+content_matches(media(Type, _), media(Type, Attrs), media(Type, Attrs)) :- !.
+content_matches(Expected, Got, _) :-
+    type_error(media(Expected), Got).
+
+read_reply(media(application/json, _), Type, As, Code, In, Result) :-
+    json_read_dict(In, Result0, []),
+    (   Type = (-)
+    ->  Result = Result0
+    ;   json_check(Type, Result1, Result0)
+    ),
+    reply_result(As, Code, Result1, Result).
+
+reply_result(data,  _Code, Result, Result).
+reply_result(error, Code, Result, _ ) :-
+    throw(error(rest_error(Code, Result), _)).
 
 
 		 /*******************************
@@ -673,10 +717,10 @@ server_handler_options([H|T], Options) :-
 %   Read the specified request body.
 
 request_body(-, _).
-request_body(content('application/json', -, Body, _Descr), Request) :-
+request_body(content(media(application/json,_), -, Body, _Descr), Request) :-
     !,
     http_read_json_dict(Request, Body).
-request_body(content('application/json', Type, Body, _Descr), Request) :-
+request_body(content(media(application/json,_), Type, Body, _Descr), Request) :-
     http_read_json_dict(Request, Body0),
     json_check(Type, Body0, Body).
 
@@ -690,9 +734,9 @@ request_body(content('application/json', Type, Body, _Descr), Request) :-
 
 openapi_reply(Responses) :-
     Responses = [R0|_],
-    arg(4, R0, Reply),
+    arg(5, R0, Reply),
     reply_status(Reply, Code, Data),
-    memberchk(response(Code, MediaType, Type, _, _Descr), Responses),
+    memberchk(response(Code, _As, MediaType, Type, _, _Descr), Responses),
     openapi_reply(Code, MediaType, Type, Data).
 
 reply_status(Var, _, _) :-
@@ -702,14 +746,14 @@ reply_status(status(Code, Data), Code, Data) :- !.
 reply_status(status(Code), Code, '') :- !.
 reply_status(Data, 200, Data).
 
-openapi_reply(Code, 'application/json', -, Data) :-
+openapi_reply(Code, media(application/json,_), -, Data) :-
     !,
     reply_json_dict(Data, [status(Code)]).
-openapi_reply(Code, 'application/json', Type, Data) :-
+openapi_reply(Code, media(application/json,_), Type, Data) :-
     !,
     json_check(Type, Out, Data),
     reply_json_dict(Out, [status(Code)]).
-openapi_reply(Code, MediaType, _, '') :-
+openapi_reply(Code, media(MediaType, _Attrs), _, '') :-
     format('Status: ~d~n', [Code]),
     format('Content-type: ~w~n~n', [MediaType]).
 
@@ -873,6 +917,7 @@ json_check(array(Type), In, Out) :-
     ;   must_be(list, In, Out)
     ).
 json_check(oneOf(Types), In, Out) :-
+    !,
     (   nonvar(In)
     ->  append(_, [Type|Rest], Types),
         catch(json_check(Type, In, Out), _, fail),
@@ -890,6 +935,7 @@ json_check(oneOf(Types), In, Out) :-
         )
     ).
 json_check(allOf(Types), In, Out) :-
+    !,
     (   nonvar(In)
     ->  maplist(json_check_in_out_type(In), Outs, Types),
         join_dicts(Outs, Out)
@@ -897,6 +943,7 @@ json_check(allOf(Types), In, Out) :-
         join_dicts(Ins, In)
     ).
 json_check(anyof(Types), In, Out) :-
+    !,
     (   member(Type, Types),
         catch(json_check(Type, In, Out), _, fail)
     ->  true
@@ -905,6 +952,7 @@ json_check(anyof(Types), In, Out) :-
     ;   type_error(oneOf(Types), Out)
     ).
 json_check(not(Type), In, Out) :-
+    !,
     (   \+ catch(json_check(Type, In, Out), _, fail)
     ->  In = Out
     ;   (   nonvar(In)
@@ -1002,7 +1050,7 @@ obj_properties_out(T0, [p(N,_Type,Req)|PT], T) :-
 %   Create a dict from a list of   dicts, containing the joined keys. If
 %   there are key duplicates, the last remains.
 
-join_dicts([One], One).
+join_dicts([One], One) :- !.
 join_dicts([H1,H2|T], Dict) :-
     H = H1.put(H2),
     join_dicts([H|T], Dict).
@@ -1429,7 +1477,7 @@ content_param(Arg,
     Arg == Arg0, !.
 
 response_param(Arg, Responses, p(response, Scheme, Description)) :-
-    member(response(Code,_MediaType, Scheme, Arg0, Description),
+    member(response(Code,_As,_MediaType, Scheme, Arg0, Description),
            Responses),
     Arg == Arg0,
     between(200, 399, Code), !.
@@ -1448,3 +1496,14 @@ system:term_expansion((:- openapi_server(File, Options)), Clauses) :-
 system:term_expansion((:- openapi_client(File, Options)), Clauses) :-
     \+ current_prolog_flag(xref, true),
     expand_openapi_client(File, Options, Clauses).
+
+
+		 /*******************************
+		 *           MESSAGES		*
+		 *******************************/
+
+:- multifile
+    prolog:error_message//1.
+
+prolog:error_message(rest_error(Code, Term)) -->
+    [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
