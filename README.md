@@ -24,7 +24,7 @@ The single library(openapi) implements the following components:
      - Check the argument types
      - Call the (user defined) implementation
      - Check the response type
-     - Return the repl document
+     - Return the reply document
   3. A compiler that creates the client predicates as wrappers
      around http_open/3.  The wrapper does
      - Type-check the parameters
@@ -81,6 +81,20 @@ returned by the server. If  an  operation   only  defines  code 204 (_no
 content_) and a default, the parameter is  missing in the client and the
 predicate succeeds if the server replies 204   or throws an exception as
 above otherwise.
+
+### Server reply
+
+The implementation skeleton for each  server   operation  has a variable
+`Response`. The implementation must succeed and   bind `Response` to one
+of the terms below.
+
+  - `status(Code)`
+  - `status(Code, Data)`
+
+Currently, `Data` must  be  a   term  suitable  for `json_write_dict/3`.
+Future versions will support a other replies   and  a hook to extend the
+reply types.
+
 
 ## Examples
 

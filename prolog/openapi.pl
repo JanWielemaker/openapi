@@ -37,9 +37,7 @@
             openapi_server/2,                   % +File, +Options
             openapi_client/2,                   % +File, +Options
 
-            openapi_doc/3,                      % +File, +Mode, +Options
-
-            openapi_read/2                      % +File, -Term
+            openapi_doc/3                       % +File, +Mode, +Options
           ]).
 :- use_module(library(apply)).
 :- use_module(library(apply_macros), []).
@@ -56,15 +54,27 @@
 :- use_module(library(http/json)).
 :- use_module(library(http/http_json)).
 :- use_module(library(http/http_parameters)).
-:- use_module(library(http/http_open)).
 :- use_module(library(http/http_header)).
+:- use_module(library(http/http_open)).         % http_open/3 is called by
+                                                % generated code.
+
+/** <module> OpenAPI (Swagger) library
+
+This library implements generating  server  and   client  code  from  an
+OpenAPI  specification.  The  generated  code    generates  or  extracts
+parameters from the path,  request  or   request  body  and  type-checks
+parameters as well as responses.
+*/
 
 :- meta_predicate
     openapi_dispatch(:).
 
 %!  openapi_server(+File, +Options)
 %
-%   Instantiate a REST server given the OpenAPI specification in File.
+%   Instantiate a REST server given the   OpenAPI specification in File.
+%   Normally, use `swipl-openapi --server=server.pl spec.yaml` to create
+%   a file that uses this directive  and generates documentation for the
+%   server operations as well as a skeleton predicate.
 
 openapi_server(File, Options) :-
     throw(error(context_error(nodirective, openapi_server(File, Options)), _)).
@@ -81,14 +91,9 @@ expand_openapi_server(File, Options,
 %!  openapi_client(+File, +Options)
 %
 %   Instantiate a REST client given the   OpenAPI specification in File.
-%   Options processed:
-%
-%     - optional(+How)
-%     One of `option_list` (default) or `unbound`.  Defines how optional
-%     parameters are handled. By default (`option_list`), the
-%     predicate signature is pred(+RequiredArgs, -Result, +Options).
-%     Using `unbound`, all paramters are handled using positional
-%     arguments and optional arguments may be passed as a variable.
+%   Normally use `swipl-openapi --client=client.pl  spec.yaml` to create
+%   a file that uses this directive   and contains documentation for the
+%   generated predicates.
 
 openapi_client(File, Options) :-
     throw(error(context_error(nodirective,
@@ -757,11 +762,20 @@ request_body(content(media(application/json,_), Type, Body, _Descr), Request) :-
 
 %!  openapi_reply(+Responses) is det.
 %
-%   Formulate the HTTP request from a term.
+%   Formulate the HTTP request from a term.  The user handler binds the
+%   response parameter to one of:
+%
+%     - status(Code)
+%     Reply using an HTTP header with status Code and no body.
+%     - status(Code, Data)
+%     Use Code as HTTP status code and generate the body from Data.
+%     Currently this only supports responses of the type
+%     `application/json` and Data must be suitable for
+%     json_write_dict/3.
 %
 %   @arg Responses is a  list   response(Code,  MediaType,  Type, Reply,
-%   Description), where `Reply` is the variable that is bound by the use
-%   handler.
+%   Description), where `Reply` is the  variable   that  is bound by the
+%   user supplied handler.
 
 openapi_reply(Responses) :-
     Responses = [R0|_],
@@ -1219,6 +1233,9 @@ schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
 %
 %     - file(+File)
 %     Dump output to File.
+%
+%   This predicate is used by the `swipl-openapi` script to generate the
+%   commented client or server code.
 
 openapi_doc(File, Mode, Options) :-
     must_be(oneof([client,server]), Mode),
