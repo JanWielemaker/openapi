@@ -1,48 +1,87 @@
-# SWI-Prolog OpenAPI (swagger) interface
+# SWI-Prolog OpenAPI (Swagger) interface
 
 ## Design
 
 There are two options to support OpenAPI:
 
   1. Use an OpenAPI file as a specification for the interface, only
-     providing the body implementation in Prolog
+     providing the body implementation in Prolog.
   2. Specify the API in Prolog and generate an OpenAPI document for
      it.
 
-We will first go for route (1).
+This library implements the first option.  Future versions may reuse
+a lot of the infrastructure to implement the second option.
 
-## Using an OpenAPI specification
+## Components
 
-The OpenAPI is bound to Prolog using the directive below. This directive
-generates the hooks into  the  HTTP   framework  and  the  wrappers that
-extract the arguments. The wrapper  calls   the  body implementation. We
-will provide a predicate that generates the predicate heads that must be
-defined to make the service work.
+The single library(openapi) implements the following components:
 
-    :- openapi(+OpenAPIFile, +Options).
+  1. A compiler that creates a Prolog friendly representation of
+     the operations described in the swagger file.
+  2. An HTTP request dispatcher that uses the above to
+     - Find the operation
+     - Extract the parameters (from path, query and request body)
+     - Check the argument types
+     - Call the (user defined) implementation
+     - Check the response type
+     - Return the repl document
+  3. A compiler that creates the client predicates as wrappers
+     around http_open/3.  The wrapper does
+     - Type-check the parameters
+     - Use the parameters to formulate a URL and optional
+       request body for http_open/3.
+     - Run the request
+     - Convert the returned document
+     - Type-check the returned document
 
-## The handler
+In addition, there is  a  script   `swi-openapi`  that  wraps  the above
+library to create the  skeleton  server   and  client,  including  PlDoc
+comments for the operations.
 
-  - Predicate name from `operationId`
-  - Followed by translated versions from `parameters`
-  - If a POST or PUT, follow by translated content
-  - Followed by response.  See below.
+## Using this package
 
-## Response
+First of all, obtain a Swagger file using *Swagger version 3.0*. Now, to
+generate a *server*, do
 
-  - Returned object, one of
-    - `status(+Status)`
-    - `json(+Term)`
-    - ...
-  - Throw exception.
-    - Need mapping of exceptions to error documents
-    - Need mapping of errors from the body to above error documents
+    swi-openapi --server=server.pl spec.yaml
 
-## Schema handling
+This  creates  a  Prolog  file  `server.pl`  with  documented  predicate
+skeletons that must be filled by  you.   We  advice  to write the actual
+implementation of the  server  in  a   separate  module  such  that  the
+implementation you have to  add  to  this   file  is  short.  This makes
+upgrading and deploying multiple versions of the server API much easier.
+There are additional options:
 
-  - Compile schemas to clauses for a validation predicate
-  - Provide schema validator against generated dict.
+  - `--httpd` includes an HTTP server in `server.pl`.  For more
+    complicated projects you probably want something more advanced.
+    This quickly gets you started though.
+  - `--ui` includes the swagger ui, so you can interactively explore
+    the API in your browser.
 
-## Binding
+To generate a *client* run
 
-  - openapi_dispatch(:Request) provides the generic handler
+    swi-openapi --client=client.pl spec.yaml
+
+This creates documented predicates that call the API. The server address
+is extracted from `spec.yaml`.  Probably the best way to use this is to
+include `client.pl` into your project using `include/1`.
+
+## The predicate mapping
+
+The `operationId` from the Swagger file  is   used  as the *name* of the
+predicate, both for the server and client. The *arguments* are extracted
+from the `parameters` specification  in   the  Swagger  file. *Required*
+arguments use a normal Prolog argument. *Optional* parameters are passed
+using a Prolog _option list_.  If  there   is  a  return  value, this is
+positioned after the required argument and   before  the option list. On
+the *client* side, normal responses are  returned as data. The `default`
+is  mapped  to  an  _exception_   of  the  form  `error(rest_error(Code,
+Data),_)`, where `Code` is the HTTP  status   code  and  `Data` the data
+returned by the server. If  an  operation   only  defines  code 204 (_no
+content_) and a default, the parameter is  missing in the client and the
+predicate succeeds if the server replies 204   or throws an exception as
+above otherwise.
+
+## Examples
+
+See the `examples` directory for two examples from the Swagger site.
