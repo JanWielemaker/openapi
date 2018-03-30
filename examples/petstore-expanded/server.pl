@@ -63,11 +63,8 @@ addPet(RequestBody, Response) :-
 %  @arg Response -
 %       pet deleted
 
-deletePet(Id, Response) :-
-    (   retract(pet(Id, _, _))
-    ->  Response = status(204)
-    ;   existence_error(pet, Id)
-    ).
+deletePet(Id, status(204)) :-
+    delete_pet(Id).
 
 %! 'find pet by id'(+Id, -Response) is det.
 %
@@ -77,7 +74,25 @@ deletePet(Id, Response) :-
 %       pet response
 
 'find pet by id'(Id, Response) :-
-    pet(Id, Response).
+    (   pet(Id, Response)
+    ->  true
+    ;   format(string(Msg), "Pet ~p does not exist", [Id]),
+        Response = status(404, _{code:404, message:Msg})
+    ).
+
+		 /*******************************
+		 *         ERROR MAPPING	*
+		 *******************************/
+
+:- multifile
+    http:map_exception_to_http_status_hook/4.
+
+http:map_exception_to_http_status_hook(
+         error(existence_error(pet, Id), _),
+         not_found(Location),
+         [connection(close)],
+         []) :-
+    format(atom(Location), '/pets/~w', [Id]).
 
 
 		 /*******************************
@@ -86,6 +101,12 @@ deletePet(Id, Response) :-
 
 :- dynamic
     pet/3.                                      % Id, Name, Tags
+
+delete_pet(Id) :-
+    retract(pet(Id, _, _)),
+    !.
+delete_pet(Id) :-
+    existence_error(pet, Id).
 
 pet(Id, Response) :-
     pet(Id, Name, Tags),
