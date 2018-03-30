@@ -1026,12 +1026,16 @@ name_value(Term) :- compound(Term), compound_name_arity(Term, _, 1).
 
 json_object_pairs(Dict, Pairs) :-
     is_dict(Dict, _),
+    !,
     dict_pairs(Dict, _, Pairs).
 json_object_pairs(json(List), Pairs) :-
     is_list(List),
     maplist(name_value, List, Keys, Values),
+    !,
     pairs_keys_values(Pairs0, Keys, Values),
     keysort(Pairs0, Pairs).
+json_object_pairs(Obj, _) :-
+    type_error(json_object, Obj).
 
 name_value(Name - Value, Name, Value) :- !.
 name_value(Name = Value, Name, Value) :- !.
