@@ -142,6 +142,9 @@ components:
           type: string
         tag:
           type: string
+        gender:
+          type: string
+          enum: [ male, female ]
 
     Error:
       required:

@@ -46,5 +46,5 @@
 
 fill :-
     read_file_to_terms('pets.db', Terms, []),
-    forall(member(pet(Name, _Class, Gender), Terms),
-                  addPet(_{name:Name, tag:Gender}, _)).
+    forall(member(pet(Name, Class, Gender), Terms),
+                  addPet(_{name:Name, tag:Class, gender:Gender}, _)).

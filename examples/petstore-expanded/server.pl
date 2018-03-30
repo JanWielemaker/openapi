@@ -49,11 +49,11 @@ findPets(Response, Options) :-
 %       pet response
 
 addPet(RequestBody, Response) :-
-    predicate_property(pet(_,_,_), number_of_clauses(Id)),
     (   Tag = RequestBody.get(tag)
-    ->  assertz(pet(Id, RequestBody.name, [Tag]))
-    ;   assertz(pet(Id, RequestBody.name, []))
+    ->  Tags = [Tag]
+    ;   Tags = []
     ),
+    assert_pet(Id, RequestBody.name, RequestBody.gender, Tags),
     pet(Id, Response).
 
 %! deletePet(+Id, -Response) is det.
@@ -100,27 +100,31 @@ http:map_exception_to_http_status_hook(
 		 *******************************/
 
 :- dynamic
-    pet/3.                                      % Id, Name, Tags
+    pet/4.                                      % Id, Name, Gender, Tags
+
+assert_pet(Id, Name, Gender, Tags) :-
+    predicate_property(pet(_,_,_,_), number_of_clauses(Id)),
+    assertz(pet(Id, Name, Gender, Tags)).
 
 delete_pet(Id) :-
-    retract(pet(Id, _, _)),
+    retract(pet(Id, _, _, _)),
     !.
 delete_pet(Id) :-
     existence_error(pet, Id).
 
 pet(Id, Response) :-
-    pet(Id, Name, Tags),
+    pet(Id, Name, Gender, Tags),
     (   Tags == []
-    ->  Response = _{id:Id, name:Name}
+    ->  Response = _{id:Id, name:Name, gender:Gender }
     ;   Tags = [Tag]
-    ->  Response = _{id:Id, name:Name, tag:Tag}
+    ->  Response = _{id:Id, name:Name, gender:Gender, tag:Tag}
     ).
 
 find_pet([], Pet) :-
     !,
     pet(_, Pet).
 find_pet(Tags, Pet) :-
-    pet(Id, _, PetTags),
+    pet(Id, _Name, _Gender, PetTags),
     (   member(Tag, Tags),
         memberchk(Tag, PetTags)
     ->  pet(Id, Pet)
