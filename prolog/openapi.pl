@@ -726,13 +726,32 @@ openapi_run(Module:Request,
             Required, AsOption, OptionParam, Content,
             Responses,
             Handler) :-
-    maplist(segment_parameter, Segments),
-    append(Required, AsOption, RequestParams),
-    http_parameters(Request, RequestParams),
-    request_body(Content, Request),
-    server_handler_options(AsOption, OptionParam),
+    catch(( maplist(segment_parameter, Segments),
+            append(Required, AsOption, RequestParams),
+            http_parameters(Request, RequestParams),
+            request_body(Content, Request),
+            server_handler_options(AsOption, OptionParam)
+          ), IE, input_error(IE)),
     call(Module:Handler),
-    openapi_reply(Responses).
+    catch(openapi_reply(Responses), OE,
+          output_error(OE)).
+
+%!  input_error(+Error).
+%!  output_error(+Error).
+%
+%   Handle errors while converting  the   input  and  output parameters.
+%   Type, domain and (JSON) syntax errors   for input parameters must be
+%   mapped to HTTP bad request errors.
+%
+%   @tbd Perform the actual mapping. We  need additional context such as
+%   the parameter named and type.
+
+input_error(E) :- throw(E).
+output_error(E) :- throw(E).
+
+%!  segment_parameter(?Segment)
+%
+%   Fill a segment parameter
 
 segment_parameter(segment(Type, Segment, Value, _Name, _Description)) :-
     segment_value(Type, Segment, Value).
