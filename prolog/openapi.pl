@@ -1005,6 +1005,12 @@ json_check(not(Type), In, Out) :-
         ;   type_error(not(Type), Out)
         )
     ).
+json_check(enum(Values), In, Out) :-
+    oas_type(string, In, Out),
+    (   memberchk(Out, Values)
+    ->  true
+    ;   domain_error(oneof(Values), Out)
+    ).
 json_check(Type, In, Out) :-
     oas_type(Type, In, Out).
 
@@ -1204,6 +1210,10 @@ json_type(Spec, not(Type), Options) :-
     _{not:NSpec} :< Spec,
     !,
     json_type(NSpec, Type, Options).
+json_type(Spec, enum(Values), _) :-
+    _{type:"string", enum:ValuesS} :< Spec,
+    !,
+    maplist(atom_string, Values, ValuesS).
 json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
     !,
