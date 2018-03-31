@@ -749,12 +749,20 @@ openapi_run(Module:Request,
 input_error(E) :- throw(E).
 output_error(E) :- throw(E).
 
+:- meta_predicate
+    add_error_context(0, +).
+
+add_error_context(Goal, C) :-
+    catch(Goal, error(Formal, _), throw(error(Formal, C))).
+
 %!  segment_parameter(?Segment)
 %
 %   Fill a segment parameter
 
-segment_parameter(segment(Type, Segment, Value, _Name, _Description)) :-
-    segment_value(Type, Segment, Value).
+segment_parameter(segment(Type, Segment, Value, Name, _Description)) :-
+    add_error_context(
+        segment_value(Type, Segment, Value),
+        rest(Name, path, Type)).
 
 server_handler_options([], []).
 server_handler_options([H|T], Options) :-
@@ -774,10 +782,16 @@ server_handler_options([H|T], Options) :-
 request_body(-, _).
 request_body(content(media(application/json,_), -, Body, _Descr), Request) :-
     !,
-    http_read_json_dict(Request, Body).
+    add_error_context(
+        http_read_json_dict(Request, Body),
+        rest(body, request_body, json)).
 request_body(content(media(application/json,_), Type, Body, _Descr), Request) :-
-    http_read_json_dict(Request, Body0),
-    json_check(Type, Body0, Body).
+    add_error_context(
+        http_read_json_dict(Request, Body0),
+        rest(body, request_body, json)),
+    add_error_context(
+        json_check(Type, Body0, Body),
+        rest(body, request_body, Type)).
 
 %!  openapi_reply(+Responses) is det.
 %
@@ -1594,7 +1608,19 @@ system:term_expansion((:- openapi_client(File, Options)), Clauses) :-
 		 *******************************/
 
 :- multifile
-    prolog:error_message//1.
+    prolog:error_message//1,
+    prolog:message_context//1.
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
+prolog:message_context(rest(Name, Where, Type)) -->
+    [ ' (REST '-[] ],
+    rest_context(Name, Where, Type),
+    [ ')'-[] ].
+
+rest_context(body, request_body, json) -->
+    [ 'invalid request body'-[] ].
+rest_context(body, request_body, _Type) -->
+    [ 'request body'-[] ].
+rest_context(Name, Where, _Type) -->
+    [ '~p parameter ~p'-[Where, Name] ].
