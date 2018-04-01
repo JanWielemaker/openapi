@@ -824,6 +824,9 @@ reply_status(status(Code, Data), Code, Data) :- !.
 reply_status(status(Code), Code, '') :- !.
 reply_status(Data, 200, Data).
 
+openapi_reply(Code, _, _, '') :-
+    !,
+    format('Status: ~d~n~n', [Code]).
 openapi_reply(Code, media(application/json,_), -, Data) :-
     !,
     reply_json_dict(Data, [status(Code)]).
@@ -831,9 +834,6 @@ openapi_reply(Code, media(application/json,_), Type, Data) :-
     !,
     json_check(Type, Out, Data),
     reply_json_dict(Out, [status(Code)]).
-openapi_reply(Code, media(MediaType, _Attrs), _, '') :-
-    format('Status: ~d~n', [Code]),
-    format('Content-type: ~w~n~n', [MediaType]).
 
 %!  openapi_error(+Module, +Error, +Responses) is det.
 %
