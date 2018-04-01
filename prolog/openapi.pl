@@ -677,7 +677,7 @@ read_reply(media(application/json, _), Type, As, Code, In, Result) :-
     json_read_dict(In, Result0, []),
     (   Type = (-)
     ->  Result = Result0
-    ;   json_check(Type, Result1, Result0)
+    ;   json_check(Type, Result0, Result1)
     ),
     reply_result(As, Code, Result1, Result).
 
@@ -918,6 +918,8 @@ oas_type(int64, In, Out) :-
     must_be(between(-9223372036854775808, 9223372036854775807), Out).
 oas_type(integer, In, Out) :-
     cvt_integer(In, Out).
+oas_type(number, In, Out) :-
+    cvt_number(In, Out).
 oas_type(float, In, Out) :-
     (   nonvar(In)
     ->  cvt_number(In, Out0),
@@ -1070,16 +1072,32 @@ json_check(not(Type), In, Out) :-
         )
     ).
 json_check(enum(Values), In, Out) :-
+    !,
     oas_type(string, In, Out),
     (   memberchk(Out, Values)
     ->  true
     ;   domain_error(oneof(Values), Out)
+    ).
+json_check(numeric(Type, Domain), In, Out) :-
+    !,
+    oas_type(Type, In, Out),
+    (   number_in_domain(Domain, Out)
+    ->  true
+    ;   domain_error(Domain, Out)
     ).
 json_check(Type, In, Out) :-
     oas_type(Type, In, Out).
 
 json_check_in_out_type(In, Out, Type) :- json_check(Type, In, Out).
 json_check_out_in_type(Out, In, Type) :- json_check(Type, In, Out).
+
+number_in_domain(between(Min, Max), Value) :-
+    Value >= Min,
+    Value =< Max.
+number_in_domain(max(Max), Value) :-
+    Value =< Max.
+number_in_domain(min(Min), Value) :-
+    Value >= Min.
 
 %!  is_json_object(@Term) is semidet.
 %
@@ -1243,7 +1261,8 @@ json_type(Spec, Type, _) :-
     !,
     atom_string(Type0, TypeS),
     atom_string(Format, FormatS),
-    once(api_type(_, Type0, Format, Type)).
+    once(api_type(_, Type0, Format, Type1)),
+    numeric_domain(Spec, Type0, Type1, Type).
 json_type(Spec, object(Props), Options) :-
     _{required:ReqS, properties:PropSpecs} :< Spec,
     !,
@@ -1282,7 +1301,8 @@ json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
     !,
     atom_string(Type0, TypeS),
-    once(api_type(_, Type0, -, Type)).
+    once(api_type(_, Type0, -, Type1)),
+    numeric_domain(Spec, Type0, Type1, Type).
 json_type(Spec, url(URL), Options) :-
     _{'$ref':URLS} :< Spec,
     !,
@@ -1299,6 +1319,22 @@ schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
     ;   Req = false
     ),
     json_type(Spec, Type, Options).
+
+numeric_domain(Spec, Type0, Type1, Type) :-
+    numeric_type(Type0),
+    !,
+    (   _{minimum:Min, maximum:Max} :< Spec
+    ->  Type = numeric(Type1, between(Min,Max))
+    ;   _{minimum:Min} :< Spec
+    ->  Type = numeric(Type1, min(Min))
+    ;   _{maximum:Max} :< Spec
+    ->  Type = numeric(Type1, max(Max))
+    ;   Type = Type1
+    ).
+numeric_domain(_, _Type0, Type, Type).
+
+numeric_type(integer).
+numeric_type(number).
 
 		 /*******************************
 		 *        DOC GENERATION	*
