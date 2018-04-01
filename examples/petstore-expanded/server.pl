@@ -63,8 +63,12 @@ addPet(RequestBody, Response) :-
 %  @arg Response -
 %       pet deleted
 
-deletePet(Id, status(204)) :-
-    delete_pet(Id).
+deletePet(Id, Response) :-
+    catch(( delete_pet(Id),
+            Response = status(204)
+          ),
+          error(existence_error(pet, _), _),
+          no_pet(Id, Response)).
 
 %! 'find pet by id'(+Id, -Response) is det.
 %
@@ -76,23 +80,12 @@ deletePet(Id, status(204)) :-
 'find pet by id'(Id, Response) :-
     (   pet(Id, Response)
     ->  true
-    ;   format(string(Msg), "Pet ~p does not exist", [Id]),
-        Response = status(404, _{code:404, message:Msg})
+    ;   no_pet(Id, Response)
     ).
 
-		 /*******************************
-		 *         ERROR MAPPING	*
-		 *******************************/
-
-:- multifile
-    http:map_exception_to_http_status_hook/4.
-
-http:map_exception_to_http_status_hook(
-         error(existence_error(pet, Id), _),
-         not_found(Location),
-         [connection(close)],
-         []) :-
-    format(atom(Location), '/pets/~w', [Id]).
+no_pet(Id, Response) :-
+    format(string(Msg), "Pet ~p does not exist", [Id]),
+    Response = status(404, _{code:404, message:Msg}).
 
 
 		 /*******************************
@@ -100,10 +93,22 @@ http:map_exception_to_http_status_hook(
 		 *******************************/
 
 :- dynamic
-    pet/4.                                      % Id, Name, Gender, Tags
+    pet/4,                                      % Id, Name, Gender, Tags
+    next_pet_id/1.                              % Id
+
+new_pet_id(Id) :-
+    with_mutex(pet, new_pet_id_sync(Id)).
+
+new_pet_id_sync(Id) :-
+    (   retract(next_pet_id(Id))
+    ->  true
+    ;   Id = 1
+    ),
+    Id2 is Id + 1,
+    asserta(next_pet_id(Id2)).
 
 assert_pet(Id, Name, Gender, Tags) :-
-    predicate_property(pet(_,_,_,_), number_of_clauses(Id)),
+    new_pet_id(Id),
     assertz(pet(Id, Name, Gender, Tags)).
 
 delete_pet(Id) :-
