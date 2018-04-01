@@ -726,17 +726,17 @@ openapi_run(Module:Request,
             Required, AsOption, OptionParam, Content,
             Responses,
             Handler) :-
+    append(Required, AsOption, RequestParams),
     catch(( maplist(segment_parameter, Segments),
-            append(Required, AsOption, RequestParams),
             http_parameters(Request, RequestParams),
             request_body(Content, Request),
             server_handler_options(AsOption, OptionParam)
-          ), IE, input_error(IE)),
+          ), IE, input_error(IE, RequestParams)),
     call(Module:Handler),
     catch(openapi_reply(Responses), OE,
           output_error(OE)).
 
-%!  input_error(+Error).
+%!  input_error(+Error, +RequestParams).
 %!  output_error(+Error).
 %
 %   Handle errors while converting  the   input  and  output parameters.
@@ -746,7 +746,24 @@ openapi_run(Module:Request,
 %   @tbd Perform the actual mapping. We  need additional context such as
 %   the parameter named and type.
 
-input_error(E) :- throw(E).
+input_error(error(Formal, Context), RequestParams) :-
+    subsumes_term(context(_, http_parameter(_)), Context),
+    Context = context(_, http_parameter(Param)),
+    debug(rest(error), 'Error in ~p; request = ~p', [Param, RequestParams]),
+    member(ReqParam, RequestParams),
+    ReqParam =.. [Param, _Value, Options],
+    http_param_type(Options, Type),
+    !,
+    throw(error(Formal, rest(Param, request, Type))).
+input_error(E, _RequestParams) :- throw(E).
+
+http_param_type(Options, Type) :-
+    memberchk(openapi(Type), Options),
+    !.
+http_param_type(Options, array(Type)) :-
+    memberchk(list(openapi(Type)), Options),
+    !.
+
 output_error(E) :- throw(E).
 
 :- meta_predicate
