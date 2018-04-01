@@ -728,7 +728,7 @@ openapi_run(Module:Request,
             Handler) :-
     append(Required, AsOption, RequestParams),
     catch(( maplist(segment_parameter, Segments),
-            http_parameters(Request, RequestParams),
+            http_parameters([method(get)|Request], RequestParams),
             request_body(Content, Request),
             server_handler_options(AsOption, OptionParam)
           ), IE, input_error(IE, RequestParams)),
@@ -740,11 +740,8 @@ openapi_run(Module:Request,
 %!  output_error(+Error).
 %
 %   Handle errors while converting  the   input  and  output parameters.
-%   Type, domain and (JSON) syntax errors   for input parameters must be
-%   mapped to HTTP bad request errors.
-%
-%   @tbd Perform the actual mapping. We  need additional context such as
-%   the parameter named and type.
+%   Currently maps error context from   http_parameters/2 to rest(Param,
+%   query, Type) context.
 
 input_error(error(Formal, Context), RequestParams) :-
     subsumes_term(context(_, http_parameter(_)), Context),
