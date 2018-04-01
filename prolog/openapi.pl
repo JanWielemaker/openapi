@@ -846,13 +846,44 @@ openapi_reply(Code, media(MediaType, _Attrs), _, '') :-
 %   @arg Responses are the declared valid responses.
 
 openapi_error(Module, Error, Responses) :-
-    call(Module:openapi_error_hook(Error, Reply, Responses)),
+    map_error(Module, Error, Responses, Reply),
     Responses = [R0|_],
-    arg(4, R0, Reply),
+    arg(5, R0, Reply),
     openapi_reply(Responses),
     !.
 openapi_error(_Module, Error, _Responses) :-
     throw(Error).
+
+map_error(Module, Error, Responses, Reply) :-
+    call(Module:openapi_error_hook(Error, Responses, Reply)),
+    !.
+map_error(_Module, Error, _Responses, Reply) :-
+    Error = error(_, Context),
+    nonvar(Context),
+    http_error_status(Context, Error, Status),
+    message_to_string(Error, Message),
+    Reply = status(Status, _{code:Status, message:Message}).
+
+http_error_status(rest(_,_,_), _, 400).
+
+%!  openapi_error_hook(+Error, +Responses, -Reply) is semidet.
+%
+%   Hook called in the server module if   an error was encountered while
+%   processing  the  REST  request.  If  the   error  was  thrown  while
+%   extracting and converting the request   parameters, the _context_ of
+%   the exception (2nd argument of the   error/2 term) has the following
+%   shape:
+%
+%     - rest(Parameter, Location, Type)
+%     Where Parameter is the parameter name or `body`, Location is
+%     `path`, `query` or `request_body`, and Type is the translated
+%     JSON schema type if the parameter.  The generated error is
+%     typically a type_error, domain_error or syntax_error.
+%
+%   @arg Responses contains a description of the valid response types
+%   and codes.
+%   @arg Reply is typically bound to a term status(Code, Object), where
+%   `Object` is a dict describing the error.
 
 
 		 /*******************************
