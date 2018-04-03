@@ -31,8 +31,7 @@ The single library(openapi) implements the following components:
      - Use the parameters to formulate a URL and optional
        request body for http_open/3.
      - Run the request
-     - Convert the returned document
-     - Type-check the returned document
+     - Type-check and return the returned answer
 
 In addition, there is  a  script   `swi-openapi`  that  wraps  the above
 library to create the  skeleton  server   and  client,  including  PlDoc
@@ -95,7 +94,13 @@ Currently, `Data` must  be  a   term  suitable  for `json_write_dict/3`.
 Future versions will support a other replies   and  a hook to extend the
 reply types.
 
-
 ## Examples
 
 See the `examples` directory for two examples from the Swagger site.
+
+# Prerequisites
+
+SWI-Prolog 7.7.11 for basic operation. This  version   has  a bug in the
+YAML parser and lacks an extension  to `http_parameters/2` that supports
+more precise HTTP error reports.
+
