@@ -513,8 +513,15 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
 handler_predicate(_, _, Spec, PredicateName) :-
     atom_string(PredicateName, Spec.get(operationId)),
     !.
-handler_predicate(Method, Path, _Spec, anonymous) :-
-    format('No operationId for ~q ~q~n', [Method, Path]).
+handler_predicate(Method, Path, _Spec, PredicateName) :-
+    atomic_list_concat(Segments, /, Path),
+    reverse(Segments, RevSegments),
+    member(Segment, RevSegments),
+    \+ sub_atom(Segment, _, _, _, '{'),
+    !,
+    file_name_extension(Name, _, Segment),
+    atomic_list_concat([Method, '_', Name], PredicateName),
+    print_message(warning, openapi(no_operation_id, Method, Path, PredicateName)).
 
 
 %!  response_has_data(+Responses) is semidet.
