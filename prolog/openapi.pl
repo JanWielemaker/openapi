@@ -179,7 +179,7 @@ server_path_clause(Path-Spec, Options) -->
 path_handlers([], _Path, _) --> [].
 path_handlers([Method-Spec|T], Path, Options) -->
     { path_handler(Path, Method, Spec, Fact, Options),
-      path_docs(Spec, Docs)
+      path_docs(Method, Path, Spec, Docs)
     },
     [Fact, Docs],
     path_handlers(T, Path, Options).
@@ -212,7 +212,7 @@ path_handler(Path, Method, Spec,
     append(Params1, [Result|OptionParams], AllParams),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
-    atom_string(PredName, Spec.operationId),
+    handler_predicate(Method, Path, Spec, PredName),
     Handler =.. [PredName|AllParams].
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
@@ -280,12 +280,12 @@ hp_description(Spec) -->
     [ description(Descr) ].
 hp_description(_) --> [].
 
-%!  path_docs(+Spec, -Docs) is det.
+%!  path_docs(+Method, +Path, +Spec, -Docs) is det.
 %
-%   Generate documentation clauses for an operationID
+%   Generate documentation clauses for an operationId
 
-path_docs(Spec, openapi_doc(OperationID, Docs)) :-
-    atom_string(OperationID, Spec.operationId),
+path_docs(Method, Path, Spec, openapi_doc(OperationID, Docs)) :-
+    handler_predicate(Method, Path, Spec, OperationID),
     phrase(path_doc(Spec), Docs).
 
 %!  path_doc(+Spec)//
@@ -437,7 +437,7 @@ client_handlers([H|T], Path, Options) -->
 client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     atomic_list_concat(Parts, '/', PathSpec),
     path_vars(Parts, PathList, PathBindings),
-    atom_string(PredName, Spec.operationId),
+    handler_predicate(Method, PathSpec, Spec, PredName),
     (   ParamSpecs = Spec.get(parameters)
     ->  client_parameters(ParamSpecs, PathBindings,
                           Params, Query, Optional,
@@ -485,7 +485,19 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                  close(In))
            ).
 
-%!  response_has_data(Responses) is semidet.
+%!  handler_predicate(+Method, +Path, +Spec, -PredicateName) is det.
+%
+%   Generate  a  predicate  name  from   a  specification.  Prefers  the
+%   `operationId`.
+
+handler_predicate(_, _, Spec, PredicateName) :-
+    atom_string(PredicateName, Spec.get(operationId)),
+    !.
+handler_predicate(Method, Path, _Spec, anonymous) :-
+    format('No operationId for ~q ~q~n', [Method, Path]).
+
+
+%!  response_has_data(+Responses) is semidet.
 %
 %   True if the request (may) return data. This   is not the case if the
 %   only responses are 204 (no content) or   error codes that are mapped
