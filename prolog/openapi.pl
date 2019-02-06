@@ -442,7 +442,10 @@ server_clause(Server) -->
 
 client_path_clauses([], _) --> [].
 client_path_clauses([H|T], Options) -->
-    client_path_clause(H, Options),
+    (   client_path_clause(H, Options)
+    ->  []
+    ;   { print_message(error, openapi(path_failed, H)) }
+    ),
     client_path_clauses(T, Options).
 
 client_path_clause(Path-Spec, Options) -->
@@ -461,17 +464,25 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     (   ParamSpecs = Spec.get(parameters)
     ->  client_parameters(ParamSpecs, PathBindings,
                           Params, Query, Optional,
-                          CheckParams, Options),
+                          CheckParams,
+                          [ path(PathSpec),
+                            method(Method)
+                          | Options
+                          ]),
         (   Optional == []
         ->  ClientOptionArg = []
         ;   ClientOptionArg = [ClientOptions]
         )
-    ;   assertion(PathBindings == []),          % TBD: Proper message
-        Params = [],
+    ;   PathBindings == []
+    ->  Params = [],
         Query = [],
         CheckParams = true,
         Optional = [],
         ClientOptionArg = []
+    ;   print_message(error,
+                      openapi(not_covered_path_vars(Method, PathSpec,
+                                                    PathBindings))),
+        fail
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     request_body(Content, ContentGoal, OpenOptions),
@@ -572,7 +583,10 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Opt, Check, Options) :-
     param_type(H, Type, Options),
     (   memberchk(Name=Segment, PathBindings)
     ->  Check1 = openapi:segment_value(Type, Segment, P0)
-    ;   existence_error(path_parameter, Name)
+    ;   option(path(Path), Options),
+        option(method(Method), Options),
+        print_message(error, openapi(missing_path_parameter(Method, Name, Path))),
+        fail
     ),
     client_parameters(T, PathBindings, Ps, Query, Opt, Check0, Options),
     mkconj(Check0, Check1, Check).
@@ -1733,6 +1747,9 @@ system:term_expansion((:- openapi_client(File, Options)), Clauses) :-
 
 prolog:message(openapi(path_failed, Path-_Spec)) -->
     [ 'OpenAPI: failed to generate clauses for path ~p'-[Path] ].
+prolog:message(openapi(no_operation_id, Method, Path, PredicateName)) -->
+    [ 'OpenAPI: no operationId for ~p ~p, using ~p'-
+      [Method, Path, PredicateName] ].
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
