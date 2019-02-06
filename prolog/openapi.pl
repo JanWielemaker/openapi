@@ -195,7 +195,11 @@ path_handler(Path, Method, Spec,
     path_vars(Path, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
-                          Request, AsOption, Params, Options),
+                          Request, AsOption, Params,
+                          [ path(Path),
+                            method(Method)
+                          | Options
+                          ]),
         (   AsOption == []
         ->  OptionParams = []
         ;   OptionParams = [OptionParam]
@@ -241,7 +245,9 @@ server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
     (   memberchk(Name=Seg, PathB)
     ->  param_type(H, Type, Options),
         param_description(H, Descr)
-    ;   existence_error(path_parameter, Name)
+    ;   option(path(Path), Options),
+        option(method(Method), Options),
+        existence_error(path_parameter, Name, Method-Path)
     ),
     server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
 server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, _) :-
