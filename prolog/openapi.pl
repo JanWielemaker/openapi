@@ -192,8 +192,7 @@ path_handler(Path, Method, Spec,
                              Request, AsOption, OptionParam,
                              Content, Responses, Handler),
              Options) :-
-    atomic_list_concat(Parts, '/', Path),
-    path_vars(Parts, PathList, PathBindings),
+    path_vars(Path, PathList, PathBindings),
     (   ParamSpecs = Spec.get(parameters)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
                           Request, AsOption, Params, Options),
@@ -306,17 +305,26 @@ path_doc(Key, Spec) -->
 path_doc(_, _) --> [].
 
 
-%!  path_vars(+SegmentSpec, -Segments, -Bindings) is det.
+%!  path_vars(+PathSpec, -Segments, -Bindings) is det.
 
-path_vars([], [], []).
-path_vars([H0|T0], [H|T], [Name=H|BT]) :-
-    sub_atom(H0, 0, _, _, '{'),
-    sub_atom(H0, _, _, 0, '}'),
+path_vars(PathSpec, Segments, Bindings) :-
+    string_codes(PathSpec, Codes),
+    phrase(path_vars(Segments, Bindings), Codes).
+
+path_vars([Segment,Var|Segments], [VarName=Var|Bindings]) -->
+    string(SegCodes), "{", string(VarCodes), "}",
     !,
-    sub_atom(H0, 1, _, 1, Name),
-    path_vars(T0, T, BT).
-path_vars([H|T0], [H|T], Bindings) :-
-    path_vars(T0, T, Bindings).
+    { atom_codes(Segment, SegCodes),
+      atom_codes(VarName, VarCodes)
+    },
+    path_vars(Segments, Bindings).
+path_vars(Segments, []) -->
+    remainder(Codes),
+    {   Codes == []
+    ->  Segments = []
+    ;   atom_codes(Segment, Codes),
+        Segments = [Segment]
+    }.
 
 %! content_parameter(+Method, +Spec, -Content,
 %!                   +Params0, -Params, +Options) is det.
@@ -435,8 +443,7 @@ client_handlers([H|T], Path, Options) -->
     client_handlers(T, Path, Options).
 
 client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
-    atomic_list_concat(Parts, '/', PathSpec),
-    path_vars(Parts, PathList, PathBindings),
+    path_vars(PathSpec, PathList, PathBindings),
     handler_predicate(Method, PathSpec, Spec, PredName),
     (   ParamSpecs = Spec.get(parameters)
     ->  client_parameters(ParamSpecs, PathBindings,
@@ -465,7 +472,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     (   PathBindings == []
     ->  Path = PathSpec,
         PathGoal = true
-    ;   PathGoal = atomic_list_concat(PathList, '/', Path)
+    ;   PathGoal = atomic_list_concat(PathList, Path)
     ),
     Head =.. [PredName|AllParams],
     Body = ( CheckParams, PathGoal, ContentGoal,
@@ -716,8 +723,7 @@ openapi_dispatch(M:Request) :-
     memberchk(method(Method), Request),
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
-    atomic_list_concat(Parts, '/', Path),
-    M:openapi_handler(Method, Parts, Segments,
+    M:openapi_handler(Method, Path, Segments,
                       Required, AsOption, OptionParam, Content,
                       Responses,
                       Handler),
