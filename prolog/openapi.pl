@@ -171,7 +171,8 @@ server_path_clauses([], _) --> [].
 server_path_clauses([H|T], Options) -->
     (   server_path_clause(H, Options)
     ->  []
-    ;   { print_message(error, openapi(path_failed, H)) }
+    ;   { error(openapi(path_failed, H), Options)
+        }
     ),
     server_path_clauses(T, Options).
 
@@ -182,7 +183,7 @@ server_path_clause(Path-Spec, Options) -->
 path_handlers([], _Path, _) --> [].
 path_handlers([Method-Spec|T], Path, Options) -->
     { path_handler(Path, Method, Spec, Fact, Options),
-      path_docs(Method, Path, Spec, Docs)
+      path_docs(Method, Path, Spec, Docs, Options)
     },
     [Fact, Docs],
     path_handlers(T, Path, Options).
@@ -213,15 +214,15 @@ path_handler(Path, Method, Spec,
         Request = [],
         AsOption = [],
         OptionParams = []
-    ;   print_message(error,
-                      openapi(not_covered_path_vars(Method, Path, PathBindings))),
+    ;   error(openapi(not_covered_path_vars(Method, Path, PathBindings)),
+              Options),
         fail
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     append(Params1, [Result|OptionParams], AllParams),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
-    handler_predicate(Method, Path, Spec, PredName),
+    handler_predicate(Method, Path, Spec, PredName, Options),
     Handler =.. [PredName|AllParams].
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
@@ -253,12 +254,12 @@ server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
         param_description(H, Descr)
     ;   option(path(Path), Options),
         option(method(Method), Options),
-        print_message(error, openapi(missing_path_parameter(Method, Name, Path))),
+        error(openapi(missing_path_parameter(Method, Name, Path)), Options),
         fail
     ),
     server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
-server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, _) :-
-    print_message(error, openapi(parameter_failed(H))),
+server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, Options) :-
+    error(openapi(parameter_failed(H)), Options),
     fail.
 
 http_param_options(Spec, Options) -->
@@ -296,8 +297,8 @@ hp_description(_) --> [].
 %
 %   Generate documentation clauses for an operationId
 
-path_docs(Method, Path, Spec, openapi_doc(OperationID, Docs)) :-
-    handler_predicate(Method, Path, Spec, OperationID),
+path_docs(Method, Path, Spec, openapi_doc(OperationID, Docs), Options) :-
+    handler_predicate(Method, Path, Spec, OperationID, Options),
     phrase(path_doc(Spec), Docs).
 
 %!  path_doc(+Spec)//
@@ -444,7 +445,7 @@ client_path_clauses([], _) --> [].
 client_path_clauses([H|T], Options) -->
     (   client_path_clause(H, Options)
     ->  []
-    ;   { print_message(error, openapi(path_failed, H)) }
+    ;   { error(openapi(path_failed, H), Options) }
     ),
     client_path_clauses(T, Options).
 
@@ -460,7 +461,7 @@ client_handlers([H|T], Path, Options) -->
 
 client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     path_vars(PathSpec, PathList, PathBindings),
-    handler_predicate(Method, PathSpec, Spec, PredName),
+    handler_predicate(Method, PathSpec, Spec, PredName, Options),
     (   ParamSpecs = Spec.get(parameters)
     ->  client_parameters(ParamSpecs, PathBindings,
                           Params, Query, Optional,
@@ -479,9 +480,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         CheckParams = true,
         Optional = [],
         ClientOptionArg = []
-    ;   print_message(error,
-                      openapi(not_covered_path_vars(Method, PathSpec,
-                                                    PathBindings))),
+    ;   error(openapi(not_covered_path_vars(Method, PathSpec, PathBindings)),
+              Options),
         fail
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
@@ -503,6 +503,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
              openapi:assemble_query(Module, Path,
                                     Query, Optional, ClientOptions,
                                     URL),
+             debug(openapi(client), '~w ~w', [Method, URL]),
              setup_call_cleanup(
                  openapi:http_open(URL, In,
                            [ status_code(Status),
@@ -516,15 +517,15 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                  close(In))
            ).
 
-%!  handler_predicate(+Method, +Path, +Spec, -PredicateName) is det.
+%!  handler_predicate(+Method, +Path, +Spec, -PredicateName, +Options) is det.
 %
 %   Generate  a  predicate  name  from   a  specification.  Prefers  the
 %   `operationId`.
 
-handler_predicate(_, _, Spec, PredicateName) :-
+handler_predicate(_, _, Spec, PredicateName, _Options) :-
     atom_string(PredicateName, Spec.get(operationId)),
     !.
-handler_predicate(Method, Path, _Spec, PredicateName) :-
+handler_predicate(Method, Path, _Spec, PredicateName, Options) :-
     atomic_list_concat(Segments, /, Path),
     reverse(Segments, RevSegments),
     member(Segment, RevSegments),
@@ -532,7 +533,7 @@ handler_predicate(Method, Path, _Spec, PredicateName) :-
     !,
     file_name_extension(Name, _, Segment),
     atomic_list_concat([Method, '_', Name], PredicateName),
-    print_message(warning, openapi(no_operation_id, Method, Path, PredicateName)).
+    warning(openapi(no_operation_id, Method, Path, PredicateName), Options).
 
 
 %!  response_has_data(+Responses) is semidet.
@@ -585,7 +586,7 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Opt, Check, Options) :-
     ->  Check1 = openapi:segment_value(Type, Segment, P0)
     ;   option(path(Path), Options),
         option(method(Method), Options),
-        print_message(error, openapi(missing_path_parameter(Method, Name, Path))),
+        error(openapi(missing_path_parameter(Method, Name, Path)), Options),
         fail
     ),
     client_parameters(T, PathBindings, Ps, Query, Opt, Check0, Options),
@@ -1719,6 +1720,29 @@ is_reponse_arg(Arg, Responses) :-
     member(R, Responses),
     arg(5, R, Arg0),
     Arg == Arg0.
+
+
+%!  error(+Term, +Options) is det.
+%
+%   Print an error message. If silent(true) is   an option, the error is
+%   silently ignored.
+
+error(_Term, Options) :-
+    option(silent(true), Options),
+    !.
+error(Term, _Options) :-
+    print_message(error, Term).
+
+%!  warning(+Term, +Options) is det.
+%
+%   Print an warning message. If silent(true)  is an option, the warning
+%   is silently ignored.
+
+warning(_Term, Options) :-
+    option(silent(true), Options),
+    !.
+warning(Term, _Options) :-
+    print_message(warning, Term).
 
 
 		 /*******************************
