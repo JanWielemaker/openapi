@@ -169,7 +169,10 @@ root_clause([Server|_]) -->
 
 server_path_clauses([], _) --> [].
 server_path_clauses([H|T], Options) -->
-    server_path_clause(H, Options),
+    (   server_path_clause(H, Options)
+    ->  []
+    ;   { print_message(error, openapi(path_failed, H)) }
+    ),
     server_path_clauses(T, Options).
 
 server_path_clause(Path-Spec, Options) -->
@@ -204,12 +207,15 @@ path_handler(Path, Method, Spec,
         ->  OptionParams = []
         ;   OptionParams = [OptionParam]
         )
-    ;   assertion(PathBindings == []),          % TBD: Proper message
-        SegmentMatches = [],
+    ;   PathBindings == []
+    ->  SegmentMatches = [],
         Params = [],
         Request = [],
         AsOption = [],
         OptionParams = []
+    ;   print_message(error,
+                      openapi(not_covered_path_vars(Method, Path, PathBindings))),
+        fail
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     append(Params1, [Result|OptionParams], AllParams),
@@ -247,7 +253,8 @@ server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
         param_description(H, Descr)
     ;   option(path(Path), Options),
         option(method(Method), Options),
-        existence_error(path_parameter, Name, Method-Path)
+        print_message(error, openapi(missing_path_parameter(Method, Name, Path))),
+        fail
     ),
     server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
 server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, _) :-
@@ -1713,8 +1720,12 @@ system:term_expansion((:- openapi_client(File, Options)), Clauses) :-
 		 *******************************/
 
 :- multifile
+    prolog:message//1,
     prolog:error_message//1,
     prolog:message_context//1.
+
+prolog:message(openapi(path_failed, Path-_Spec)) -->
+    [ 'OpenAPI: failed to generate clauses for path ~p'-[Path] ].
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
