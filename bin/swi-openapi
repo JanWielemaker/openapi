@@ -57,7 +57,11 @@ setup_debug(Options) :-
     forall(member(spy(Spy), Options),
            (   term_string(Term, Spy),
                gspy(Term)
-           )).
+           )),
+    (   option(gtrace(true), Options)
+    ->  gtrace
+    ;   true
+    ).
 
 usage :-
     current_prolog_flag(os_argv, [_,Exe|_]),
@@ -68,4 +72,3 @@ usage :-
   --ui		      Include Swagger UI (implies --httpd)
   --httpd             Include REST HTTP server
 ', []).
-
