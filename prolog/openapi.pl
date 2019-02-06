@@ -500,7 +500,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ),
     Head =.. [PredName|AllParams],
     Body = ( CheckParams, PathGoal, ContentGoal,
-             openapi:assemble_query(Module, Path,
+             openapi:assemble_query(Module, Method, Path,
                                     Query, Optional, ClientOptions,
                                     URL),
              debug(openapi(client), '~w ~w', [Method, URL]),
@@ -628,19 +628,35 @@ request_body(_, true, []).
 
 
 :- public
-    assemble_query/6.
+    assemble_query/7.
 
-assemble_query(Module, Path, QParams, QOptional, QOptions, URL) :-
+assemble_query(Module, Method, Path, QParams, QOptional, QOptions, URL) :-
     call(Module:openapi_server(ServerBase)),
     convlist(client_query_param, QParams, QueryFromArgs),
     optional_query_params(QOptional, QOptions, QueryFromOptions),
-    append(QueryFromArgs, QueryFromOptions, Query),
+    application_extra_query_parameters(Module, Method, Path, Extra),
+    append([Extra, QueryFromArgs, QueryFromOptions], Query),
     (   Query == []
     ->  atomics_to_string([ServerBase, Path], URL)
     ;   phrase(array_query(Query), ArrayQuery),
         uri_query_components(QueryString, ArrayQuery),
         atomics_to_string([ServerBase, Path, "?", QueryString], URL)
     ).
+
+%!  application_extra_query_parameters(+Module, +Method, +Path, -Extra) is det.
+%
+%   Allow a client to specify additional   query  parameters that do not
+%   appear in the OpenAPI  spec  but  apply   to  all  methods.  This is
+%   sometimes used to supply credentials.
+
+application_extra_query_parameters(Module, Method, Path, Extra) :-
+    current_predicate(Module:extra_query_parameters/3),
+    Module:extra_query_parameters(Method, Path, Extra),
+    !,
+    must_be(list, Extra).
+application_extra_query_parameters(_, _, _, []).
+
+
 
 %!  array_query(Query)//
 %
