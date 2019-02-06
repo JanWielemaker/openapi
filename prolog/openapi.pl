@@ -1023,7 +1023,7 @@ oas_type(binary, In, Out) :-
 oas_type(base64, In, Out) :-
     base64(In, Out).
 oas_type(boolean, In, Out) :-
-    (   nonvar(In)
+    (   var(In)
     ->  to_boolean(Out, In)
     ;   to_boolean(In, Out)
     ).
