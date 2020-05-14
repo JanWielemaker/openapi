@@ -401,6 +401,11 @@ response_description(Spec, Descr) :-
     !.
 response_description(_, "") .
 
+%!  content_type(+Sec, -BodyType, -Schema, +Options) is det.
+%
+%   Find the ContentType for the request   body  and, if applicable, its
+%   schema.
+
 content_type(Spec, media(application/json, []), Type, Options) :-
     Content = Spec.get(content),
     Media = Content.get('application/json'),
@@ -409,7 +414,23 @@ content_type(Spec, media(application/json, []), Type, Options) :-
     ->  json_type(Schema, Type, Options)
     ;   Type = (-)
     ).
+content_type(_Spec, media(Type, []), -, Options) :-
+    option(default_request_body_type(Type0), Options),
+    !,
+    to_content_type(Type0, Type).
 content_type(_Spec, media(application/json, []), -, _).
+
+to_content_type(Type0, Main/Sub) :-
+    atomic(Type0),
+    atomic_list_concat([Main,Sub], /, Type0),
+    !.
+to_content_type(Type, Type) :-
+    Type = Main/Sub,
+    must_be(atom, Main),
+    must_be(atom, Sub).
+to_content_type(Type, _) :-
+    type_error(content_type, Type).
+
 
 		 /*******************************
 		 *       CLIENT COMPILER	*
@@ -485,7 +506,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         fail
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
-    request_body(Content, ContentGoal, OpenOptions),
+    request_body(Method, PathSpec, Module, Content, ContentGoal, OpenOptions),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     (   response_has_data(Responses)
@@ -612,23 +633,34 @@ mkconj(true, G, G) :- !.
 mkconj(G, true, G) :- !.
 mkconj(G1, G2,  (G1,G2)).
 
-%!  request_body(+ContentSpec, -Goal, -HTTPOPenOptions) is det.
+%!  request_body(+Method, +Path, +Module,
+%!               +ContentSpec, -Goal, -HTTPOPenOptions) is det.
 %
 %   Translate the request body into options for http_open/3.
 
-request_body(content(media(application/json,_), Schema, InVar, _Descr),
-             openapi:json_check(Schema, OutVar, InVar),
+request_body(Method, Path, Module,
+	     content(media(application/json,_), Schema, InVar, _Descr),
+             openapi:assemble_content(Module, Method, Path,
+                                      json, Schema, InVar, OutVar),
              [ post(json(OutVar))
              ]) :-
     !.
-request_body(content(MediaType, _Schema, _Var, _Descr), _, _) :-
+request_body(Method, Path, Module,
+	     content(media(multipart/'form-data',_), Schema, InVar, _Descr),
+             openapi:assemble_content(Module, Method, Path,
+                                      form_data, Schema, InVar, OutVar),
+             [ post(form_data(OutVar))
+             ]) :-
+    !.
+request_body(_, _, _, content(MediaType, _Schema, _Var, _Descr), _, _) :-
     !,
     domain_error(openapi(content_type), MediaType).
-request_body(_, true, []).
+request_body(_, _, _, _, true, []).
 
 
 :- public
-    assemble_query/7.
+    assemble_query/7,
+    assemble_content/7.
 
 assemble_query(Module, Method, Path, QParams, QOptional, QOptions, URL) :-
     call(Module:openapi_server(ServerBase)),
@@ -642,6 +674,25 @@ assemble_query(Module, Method, Path, QParams, QOptional, QOptions, URL) :-
         uri_query_components(QueryString, ArrayQuery),
         atomics_to_string([ServerBase, Path, "?", QueryString], URL)
     ).
+
+assemble_content(Module, Method, Path, Format, Schema, In, Content) :-
+    (   Schema == (-)
+    ->  Content0 = In
+    ;   json_check(Schema, Content0, In)
+    ),
+    (   current_predicate(Module:extend_content/5),
+        Module:extend_content(Method, Path, json, Content0, Content1)
+    ->  true
+    ;   Content1 = Content0
+    ),
+    output_format(Format, Content1, Content).
+
+output_format(json, Content, Content).
+output_format(form_data, Dict, Form) :-
+    dict_pairs(Dict, _, FormPairs),
+    maplist(form_entry, FormPairs, Form).
+
+form_entry(Name-Value, Name=Value).
 
 %!  application_extra_query_parameters(+Module, +Method, +Path, -Extra) is det.
 %
