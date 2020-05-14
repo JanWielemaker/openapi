@@ -111,7 +111,7 @@ expand_openapi_client(File, Options, Clauses) :-
 
 %!  read_openapi_spec(+File, -Spec, +Options0, -Options) is det.
 
-read_openapi_spec(File, Spec, Options0, Options) :-
+read_openapi_spec(File, Spec, Options0, [yaml(Spec)|Options]) :-
     (   prolog_load_context(directory, Dir)
     ->  true
     ;   Dir = '.'
@@ -197,7 +197,7 @@ path_handler(Path, Method, Spec,
                              Content, Responses, Handler),
              Options) :-
     path_vars(Path, PathList, PathBindings),
-    (   ParamSpecs = Spec.get(parameters)
+    (   spec_parameters(Spec, ParamSpecs, Options)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
                           Request, AsOption, Params,
                           [ path(Path),
@@ -224,6 +224,13 @@ path_handler(Path, Method, Spec,
     maplist(response(Result, Options), ResPairs, Responses),
     handler_predicate(Method, Path, Spec, PredName, Options),
     Handler =.. [PredName|AllParams].
+
+spec_parameters([Spec], Parameters, Options) :-
+    deref(Spec, Parameters, Options),
+    !.
+spec_parameters(Spec, Parameters, _Options) :-
+    Parameters = Spec.get(parameters).
+
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
 %!                    -SegmentMatches, -RequestParams, -RequestOptions,
@@ -258,6 +265,10 @@ server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
         fail
     ),
     server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
+server_parameters([H|T], PathB, Segs, Request, AsOption, Params, Options) :-
+    deref(H, Param, Options),
+    !,
+    server_parameters([Param|T], PathB, Segs, Request, AsOption, Params, Options).
 server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, Options) :-
     error(openapi(parameter_failed(H)), Options),
     fail.
@@ -292,6 +303,18 @@ hp_description(Spec) -->
     !,
     [ description(Descr) ].
 hp_description(_) --> [].
+
+deref(Spec, Yaml, Options) :-
+    _{'$ref':Ref} :< Spec,
+    atomic_list_concat([#|Segments], /, Ref),
+    !,
+    option(yaml(Doc), Options),
+    yaml_subdoc(Segments, Doc, Yaml).
+
+yaml_subdoc([], Doc, Doc).
+yaml_subdoc([H|T], Doc, Sub) :-
+    Sub0 = Doc.H,
+    yaml_subdoc(T, Sub0, Sub).
 
 %!  path_docs(+Method, +Path, +Spec, -Docs) is det.
 %
