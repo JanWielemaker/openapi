@@ -197,7 +197,7 @@ path_handler(Path, Method, Spec,
                              Content, Responses, Handler),
              Options) :-
     path_vars(Path, PathList, PathBindings),
-    (   spec_parameters(Spec, ParamSpecs, Options)
+    (   spec_arg(parameters, Spec, ParamSpecs, Options)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
                           Request, AsOption, Params,
                           [ path(Path),
@@ -220,17 +220,21 @@ path_handler(Path, Method, Spec,
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     append(Params1, [Result|OptionParams], AllParams),
-    dict_pairs(Spec.responses, _, ResPairs),
+    spec_arg(responses, Spec, ResponseSpec, Options),
+    dict_pairs(ResponseSpec, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     handler_predicate(Method, Path, Spec, PredName, Options),
     Handler =.. [PredName|AllParams].
 
-spec_parameters([Spec], Parameters, Options) :-
-    deref(Spec, Parameters, Options),
-    !.
-spec_parameters(Spec, Parameters, _Options) :-
-    Parameters = Spec.get(parameters).
+spec_arg(_Key, Refs, Parameters, Options) :-
+    is_list(Refs),
+    !,
+    maplist(deref_o(Options), Refs, Parameters).
+spec_arg(Key, Spec, Parameters, _Options) :-
+    Parameters = Spec.get(Key).
 
+deref_o(Options, Ref, Value) :-
+    deref(Ref, Value, Options).
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
 %!                    -SegmentMatches, -RequestParams, -RequestOptions,
