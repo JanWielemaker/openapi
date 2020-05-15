@@ -1860,15 +1860,11 @@ segment_param(Arg, Segments, p(Name, Type, Description)) :-
     member(segment(Type, _, Arg0, Name, Description), Segments),
     Arg == Arg0, !.
 
-request_param(Arg, Requests, p(Name, Type, Description)) :-
+request_param(Arg, Requests, Param) :-
     member(R, Requests),
-    R =.. [Name,Arg0,Opts],
+    arg(1, R, Arg0),
     Arg == Arg0, !,
-    param_json_type(Opts, Type),
-    (   memberchk(description(Description), Opts)
-    ->  true
-    ;   Description = ""
-    ).
+    doc_request_param(R, Param).
 
 param_json_type(Opts, Type) :-
     memberchk(openapi(Type), Opts),
@@ -1882,15 +1878,21 @@ option_param(AsOption, p(options, list(option), options(Options))) :-
 
 doc_request_params([]) --> [].
 doc_request_params([H|T]) -->
-    { H =.. [Name,_Var,Options],
-      param_json_type(Options, Type),
-      (   memberchk(description(Description), Options)
-      ->  true
-      ;   Description = ""
-      )
-    },
-    [ p(Name,Type,Description) ],
+    { doc_request_param(H, Param) },
+    [ Param ],
     doc_request_params(T).
+
+doc_request_param(Request, p(Name,Type,Description)) :-
+    Request =.. [Name,_Var,Options],
+    (   param_json_type(Options, Type)
+    ->  true
+    ;   Type = string,
+        warning(openapi(no_type, Name), [])
+    ),
+    (   memberchk(description(Description), Options)
+    ->  true
+    ;   Description = ""
+    ).
 
 content_param(Arg,
               content(_MediaType, Scheme, Arg0, Description),
@@ -1968,6 +1970,8 @@ prolog:message(openapi(no_operation_id, Method, Path, PredicateName)) -->
 prolog:message(openapi(doc_failed, OperationId)) -->
     [ 'OpenAPI: failed to generate documentation for operationId ~p'-
       [OperationId] ].
+prolog:message(openapi(no_type, Param)) -->
+    [ 'OpenAPI: no type for parameter ~p (assuming "string")'-[Param] ].
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
