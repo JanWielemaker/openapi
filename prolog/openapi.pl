@@ -1188,14 +1188,19 @@ to_boolean(on,      true).
 to_boolean('OFF',   false).
 to_boolean('ON',    true).
 
-%!  json_check(+Spec, ?JSONIn, ?JSONOut)
+%!  json_check(+Spec, ?JSONIn, ?JSONOut) is det.
 %
 %   Validate a JSON object.
+%
+%   @error type_error(Expected, Value)
+%   @error existence_error(json_schema, URL)
 
 json_check(url(URL), In, Out) :-
     !,
-    json_schema(URL, Type),
-    json_check(Type, In, Out).
+    (   json_schema(URL, Type)
+    ->  json_check(Type, In, Out)
+    ;   existence_error(json_schema, URL)
+    ).
 json_check(object, In, Out) :-
     !,
     In = Out,
