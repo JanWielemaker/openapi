@@ -1141,9 +1141,9 @@ oas_type(boolean, In, Out) :-
     ;   to_boolean(In, Out)
     ).
 oas_type(date, In, Out) :-
-    xsd_time_string(In, 'http://www.w3.org/2001/XMLSchema#date', Out).
+    xsd_time_string(Out, 'http://www.w3.org/2001/XMLSchema#date', In).
 oas_type(date_time, In, Out) :-
-    xsd_time_string(In, 'http://www.w3.org/2001/XMLSchema#dateTime', Out).
+    xsd_time_string(Out, 'http://www.w3.org/2001/XMLSchema#dateTime', In).
 oas_type(password, In, Out) :-
     (   var(In)
     ->  to_string(Out, In)
