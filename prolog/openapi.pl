@@ -329,7 +329,7 @@ yaml_subdoc([H|T], Doc, Sub) :-
 %   Generate documentation clauses for an operationId
 
 path_docs(Method, Path, Spec, openapi_doc(OperationID, Docs), Options) :-
-    handler_predicate(Method, Path, Spec, OperationID, Options),
+    handler_predicate(Method, Path, Spec, OperationID, [warn(false)|Options]),
     phrase(path_doc(Spec), Docs).
 
 %!  path_doc(+Spec)//
@@ -585,7 +585,10 @@ handler_predicate(Method, Path, _Spec, PredicateName, Options) :-
     !,
     file_name_extension(Name, _, Segment),
     atomic_list_concat([Method, '_', Name], PredicateName),
-    warning(openapi(no_operation_id, Method, Path, PredicateName), Options).
+    (   option(warn(true), Options, true)
+    ->  warning(openapi(no_operation_id, Method, Path, PredicateName), Options)
+    ;   true
+    ).
 
 
 %!  response_has_data(+Responses) is semidet.
