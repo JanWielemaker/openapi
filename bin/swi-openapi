@@ -71,8 +71,9 @@ usage :-
     current_prolog_flag(os_argv, [_,Exe|_]),
     format(user_error, 'Usage: ~w [options] file ...~n', [Exe]),
     format(user_error, '
-  --client[=file]     Generate client
-  --server[=file]     Generate server
-  --ui		      Include Swagger UI (implies --httpd)
-  --httpd             Include REST HTTP server
+  --client[=file]          Generate client
+  --no-type-check-results  Do not type check results
+  --server[=file]          Generate server
+  --ui		           Include Swagger UI (implies --httpd)
+  --httpd                  Include REST HTTP server
 ', []).

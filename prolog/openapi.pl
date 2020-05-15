@@ -3,7 +3,8 @@
     Author:        Jan Wielemaker
     E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (c)  2018, VU University Amsterdam
+    Copyright (c)  2018-2020, VU University Amsterdam
+                              CWI, Amsterdam
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -446,6 +447,10 @@ response_description(_, "") .
 %   Find the ContentType for the request   body  and, if applicable, its
 %   schema.
 
+content_type(_Spec, media(application/json, []), Type, Options) :-
+    option(type_check_results(false), Options),
+    !,
+    Type = (-).
 content_type(Spec, media(application/json, []), Type, Options) :-
     Content = Spec.get(content),
     Media = Content.get('application/json'),
@@ -1601,9 +1606,11 @@ doc_gen(Stream, File, Clauses, Options) :-
 file_header(Stream, File, Options) :-
     option(mode(client), Options),
     !,
+    client_options(Options, ClientOptions),
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n~n', []),
-    format(Stream, ':- openapi_client(~q, [warn(false)]).~n~n', [File]).
+    portray_clause(Stream, (:- openapi_client(File, ClientOptions))),
+    nl(Stream).
 file_header(Stream, File, Options) :-
     option(mode(server), Options),
     !,
@@ -1614,6 +1621,11 @@ file_header(Stream, File, Options) :-
     format(Stream, '~n', []),
     format(Stream, ':- openapi_server(~q, []).~n~n', [File]).
 file_header(_, _, _).
+
+client_options(Options, [warn(false),type_check_results(Mode)]) :-
+    option(type_check_results(Mode), Options),
+    !.
+client_options(_, [warn(false)]).
 
 server_header(Stream, File, Options) :-
     (   option(httpd(true), Options)
