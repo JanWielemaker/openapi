@@ -171,7 +171,8 @@ server_path_clauses([], _) --> [].
 server_path_clauses([H|T], Options) -->
     (   server_path_clause(H, Options)
     ->  []
-    ;   { error(openapi(path_failed, H), Options)
+    ;   { error(openapi(path_failed, H), Options),
+          start_debugger
         }
     ),
     server_path_clauses(T, Options).
@@ -304,9 +305,7 @@ hp_schema(Spec, Options) -->
     !,
     [ ParmType ].
 hp_schema(_Spec, _Options) -->
-    { current_prolog_flag(debug, true),
-      gtrace, fail
-    }.
+    { start_debugger_fail }.
 
 json_param_type(array(Type), list(openapi(Type))) :- !.
 json_param_type(Type, openapi(Type)).
@@ -319,14 +318,17 @@ hp_description(_) --> [].
 
 deref(Spec, Yaml, Options) :-
     _{'$ref':Ref} :< Spec,
-    atomic_list_concat([#|Segments], /, Ref),
+    atomic_list_concat(Segments, /, Ref),
     !,
     option(yaml(Doc), Options),
     yaml_subdoc(Segments, Doc, Yaml).
 
 yaml_subdoc([], Doc, Doc).
 yaml_subdoc([H|T], Doc, Sub) :-
-    Sub0 = Doc.H,
+    (   (H == '' ; H == '#')
+    ->  Sub0 = Doc
+    ;   Sub0 = Doc.H
+    ),
     yaml_subdoc(T, Sub0, Sub).
 
 %!  path_docs(+Method, +Path, +Spec, -Docs) is det.
@@ -1502,11 +1504,18 @@ json_type(Spec, Type, _) :-
     atom_string(Type0, TypeS),
     once(api_type(_, Type0, -, Type1)),
     numeric_domain(Spec, Type0, Type1, Type).
-json_type(Spec, url(URL), Options) :-
+json_type(Spec, Type, Options) :-
     _{'$ref':URLS} :< Spec,
     !,
     option(base_uri(Base), Options),
-    uri_normalized(URLS, Base, URL).
+    uri_normalized(URLS, Base, URL),
+    (   url_type(URL, Spec2)
+    ->  atom_string(NewBase, URLS),
+        json_type(Spec2, Type, [base_uri(NewBase)|Options])
+    ;   Type = url(URL)
+    ).
+json_type(_Spec, _Type, _Options) :-
+    start_debugger_fail.
 
 opts_json_type(Options, Spec, Type) :-
     json_type(Spec, Type, Options).
@@ -1533,6 +1542,23 @@ numeric_domain(_, _Type0, Type, Type).
 
 numeric_type(integer).
 numeric_type(number).
+
+%!  url_type(+URL, -Type:json) is semidet.
+%
+%   Assuming URL points to  a  local   file  and  fragment  thereof that
+%   specifies a type, Type is the JSON representation of this type.
+
+url_type(URL, Type) :-
+    uri_components(URL, Components),
+    uri_data(scheme, Components, file),
+    uri_data(path, Components, File),
+    uri_data(fragment, Components, Fragment),
+    openapi_read(File, Spec),
+    atomic_list_concat(Segments, /, Fragment),
+    yaml_subdoc(Segments, Spec, Type).
+
+
+
 
 		 /*******************************
 		 *        DOC GENERATION	*
@@ -1871,8 +1897,7 @@ doc_param(from(Segments, Request, AsOption, OptionParam,
         option_param(AsOption, Param)
     ;   content_param(Arg, Content, Param)
     ;   response_param(Arg, Responses, Param, Options)
-    ;   current_prolog_flag(debug, true),
-        gtrace, fail
+    ;   start_debugger_fail
     ), !.
 
 segment_param(Arg, Segments, p(Name, Type, Description)) :-
@@ -1955,6 +1980,16 @@ warning(_Term, Options) :-
     !.
 warning(Term, _Options) :-
     print_message(warning, Term).
+
+start_debugger :-
+    current_prolog_flag(debug, true),
+    !,
+    gtrace.
+start_debugger.
+
+start_debugger_fail :-
+    start_debugger,
+    fail.
 
 
 		 /*******************************
