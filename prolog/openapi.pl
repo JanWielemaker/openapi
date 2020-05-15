@@ -1700,7 +1700,7 @@ camel_skip([H|T]) --> !, [H], camel_skip(T).
 doc_description(Doc) -->
     { memberchk(summary(Summary), Doc),
       memberchk(description(Desc), Doc),
-      split_string(Desc, "\n", "", Lines)
+      string_lines(Desc, Lines)
     }, !,
     "%  ", atom(Summary), "\n",
     lines(Lines, "%  "),
@@ -1720,11 +1720,19 @@ doc_description(_) -->  [].
 
 string_lines(String, Lines) :-
     split_string(String, "\n", "", Lines0),
-    (   append(Lines, [""], Lines0)
-    ->  true                          % remove terminating newline
-    ;   Lines = Lines0
-    ).
+    delete_empty_lines(Lines0, Lines1),
+    reverse(Lines1, Lines2),
+    delete_empty_lines(Lines2, Lines3),
+    reverse(Lines3, Lines).
 
+delete_empty_lines([Line|T0], T) :-
+    empty_line(Line),
+    !,
+    delete_empty_lines(T0, T).
+delete_empty_lines(T, T).
+
+empty_line(Line) :-
+    split_string(Line, " \t", " \t", [""]).
 
 lines([], _) --> [].
 lines([H|T], Prefix) --> atom(Prefix), atom(H), "\n", lines(T, Prefix).
