@@ -1854,6 +1854,8 @@ doc_param(from(Segments, Request, AsOption, OptionParam,
         option_param(AsOption, Param)
     ;   content_param(Arg, Content, Param)
     ;   response_param(Arg, Responses, Param, Options)
+    ;   current_prolog_flag(debug, true),
+        gtrace, fail
     ), !.
 
 segment_param(Arg, Segments, p(Name, Type, Description)) :-
