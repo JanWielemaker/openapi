@@ -1506,8 +1506,7 @@ json_type(Spec, url(URL), Options) :-
     _{'$ref':URLS} :< Spec,
     !,
     option(base_uri(Base), Options),
-    file_directory_name(Base, Dir),
-    atom_concat(Dir, URLS, URL).
+    uri_normalized(URLS, Base, URL).
 
 opts_json_type(Options, Spec, Type) :-
     json_type(Spec, Type, Options).
