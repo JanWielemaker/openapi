@@ -583,7 +583,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
 %   `operationId`.
 
 handler_predicate(_, _, Spec, PredicateName, _Options) :-
-    atom_string(PredicateName, Spec.get(operationId)),
+    uncamel_case(Spec.get(operationId), PredicateName),
     !.
 handler_predicate(Method, Path, _Spec, PredicateName, Options) :-
     atomic_list_concat(Segments, /, Path),
@@ -1561,7 +1561,7 @@ file_header(Stream, File, Options) :-
     !,
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n~n', []),
-    format(Stream, ':- openapi_client(~q, []).~n~n', [File]).
+    format(Stream, ':- openapi_client(~q, [warn(false)]).~n~n', [File]).
 file_header(Stream, File, Options) :-
     option(mode(server), Options),
     !,
@@ -1678,6 +1678,10 @@ argument(p(Name, _Type, _Descr)) -->
 quoted_atom(Atom, List, Tail) :-
     format(codes(List,Tail), '~q', [Atom]).
 
+%!  camel_case(+Name)
+%
+%   Emit an identifier in CamelCase.
+
 camel_case(Name) -->
     { camel_case(Name, Camel) },
     atom(Camel).
@@ -1696,6 +1700,51 @@ camel([H|T]) -->
 camel_skip([]) --> [].
 camel_skip([0'_|T]) --> !, camel(T).
 camel_skip([H|T]) --> !, [H], camel_skip(T).
+
+%!  uncamel_case(+In:atom, -Out:atom)
+%
+%   Turn the commonly use CamelCase operationId   into a pleasant Prolog
+%   identifier. This ensures the first character   is  lower case and lU
+%   sequences are translated into l_l. lUU is changed into l_UU
+
+uncamel_case(In, Out) :-
+    atom_codes(In, Codes),
+    phrase(uncamel(UnCamel), Codes),
+    atom_codes(Out, UnCamel).
+
+uncamel([H|T]) -->
+    [U],
+    { code_type(U, upper(H)) },
+    !,
+    uncamel_(T).
+uncamel(List) -->
+    uncamel_(List).
+
+uncamel_([L,0'_,U1,U2|T]) -->
+    [L,U1,U2],
+    { code_type(L, lower),
+      code_type(U1, upper),
+      code_type(U2, upper)
+    },
+    !,
+    uncamel_(T).
+uncamel_([L,0'_,Lower|T]) -->
+    [L,U],
+    { code_type(L, lower),
+      code_type(U, upper(Lower))
+    },
+    !,
+    uncamel_(T).
+uncamel_([H|T]) -->
+    [H],
+    !,
+    uncamel_(T).
+uncamel_([]) -->
+    [].
+
+%!  doc_description(+Doc)//
+%
+%   Emit the summary and documentation
 
 doc_description(Doc) -->
     { memberchk(summary(Summary), Doc),
