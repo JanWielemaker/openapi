@@ -177,8 +177,14 @@ server_path_clauses([H|T], Options) -->
     server_path_clauses(T, Options).
 
 server_path_clause(Path-Spec, Options) -->
-    { dict_pairs(Spec, _, Methods) },
-    path_handlers(Methods, Path, Options).
+    { dict_pairs(Spec, _, Methods0),
+      (   selectchk(parameters-Parms, Methods0, Methods)
+      ->  Options1 = [parameters(Parms)|Options]
+      ;   Methods = Methods0,
+          Options1 = Options
+      )
+    },
+    path_handlers(Methods, Path, Options1).
 
 path_handlers([], _Path, _) --> [].
 path_handlers([Method-Spec|T], Path, Options) -->
@@ -197,7 +203,7 @@ path_handler(Path, Method, Spec,
                              Content, Responses, Handler),
              Options) :-
     path_vars(Path, PathList, PathBindings),
-    (   spec_arg(parameters, Spec, ParamSpecs, Options)
+    (   spec_parameters(Spec, ParamSpecs, Options)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
                           Request, AsOption, Params,
                           [ path(Path),
@@ -220,21 +226,19 @@ path_handler(Path, Method, Spec,
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
     append(Params1, [Result|OptionParams], AllParams),
-    spec_arg(responses, Spec, ResponseSpec, Options),
-    dict_pairs(ResponseSpec, _, ResPairs),
+    dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     handler_predicate(Method, Path, Spec, PredName, Options),
     Handler =.. [PredName|AllParams].
 
-spec_arg(_Key, Refs, Parameters, Options) :-
-    is_list(Refs),
-    !,
-    maplist(deref_o(Options), Refs, Parameters).
-spec_arg(Key, Spec, Parameters, _Options) :-
-    Parameters = Spec.get(Key).
-
-deref_o(Options, Ref, Value) :-
-    deref(Ref, Value, Options).
+spec_parameters(Spec, Parameters, Options) :-
+    option(parameters(Common), Options, []),
+    (   Me = Spec.get(parameters)
+    ->  true
+    ;   Me = []
+    ),
+    append(Common, Me, Parameters),
+    Parameters \== [].
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
 %!                    -SegmentMatches, -RequestParams, -RequestOptions,
