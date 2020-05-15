@@ -1550,10 +1550,9 @@ doc_output(current_output, true, _).
 doc_gen(Stream, File, Clauses, Options) :-
     file_header(Stream, File, Options),
     forall(doc_data(Clauses, OperationId, Data, Options),
-           (   phrase(openapi_doc(OperationId, Data, Options), S),
-               format(Stream, '~s', [S]),
-               fail
-           ;   true
+           (   phrase(openapi_doc(OperationId, Data, Options), S)
+           ->  format(Stream, '~s', [S])
+           ;   warning(openapi(doc_failed, OperationId), Options)
            )).
 
 file_header(Stream, File, Options) :-
@@ -1620,7 +1619,7 @@ server(Port) :-
 
 ', []).
 
-%!  openapi_doc(+OperationID, +Data, +Options)//
+%!  openapi_doc(+OperationID, +Data, +Options)// is det.
 
 openapi_doc(OperationId, Data, Options) -->
     doc_mode(OperationId, Data.arguments),
@@ -1826,7 +1825,7 @@ type(Type, List, Tail) :-
     format(codes(List, Tail), '~p', [Type]).
 
 
-%!  doc_data(:ServerClauses, -OperationID, -Data:dict, +Options) is det.
+%!  doc_data(:ServerClauses, -OperationID, -Data:dict, +Options) is nondet.
 %
 %   Get  a  dict  that  contains   all    information   to  produce  the
 %   documentation.
@@ -1836,11 +1835,15 @@ doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}, Options) :-
                            Request, AsOption, OptionParam,
                            Content, Responses, Handler), Clauses),
     Handler =.. [OperationId|Args],
-    memberchk(openapi_doc(OperationId, Doc), Clauses),
-    maplist(doc_param(from(Segments,
-                           Request, AsOption, OptionParam,
-                           Content, Responses), Options), Args, Params0),
-    exclude(==(-), Params0, Params).
+    (   memberchk(openapi_doc(OperationId, Doc), Clauses),
+        maplist(doc_param(from(Segments,
+                               Request, AsOption, OptionParam,
+                               Content, Responses), Options), Args, Params0),
+        exclude(==(-), Params0, Params)
+    ->  true
+    ;   warning(openapi(doc_failed, OperationId), Options),
+        fail
+    ).
 
 doc_param(from(Segments, Request, AsOption, OptionParam,
                Content, Responses), Options,
@@ -1962,6 +1965,9 @@ prolog:message(openapi(path_failed, Path-_Spec)) -->
 prolog:message(openapi(no_operation_id, Method, Path, PredicateName)) -->
     [ 'OpenAPI: no operationId for ~p ~p, using ~p'-
       [Method, Path, PredicateName] ].
+prolog:message(openapi(doc_failed, OperationId)) -->
+    [ 'OpenAPI: failed to generate documentation for operationId ~p'-
+      [OperationId] ].
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
