@@ -502,8 +502,14 @@ client_path_clauses([H|T], Options) -->
     client_path_clauses(T, Options).
 
 client_path_clause(Path-Spec, Options) -->
-    { dict_pairs(Spec, _, Methods) },
-    client_handlers(Methods, Path, Options).
+    { dict_pairs(Spec, _, Methods0),
+      (   selectchk(parameters-Parms, Methods0, Methods)
+      ->  Options1 = [parameters(Parms)|Options]
+      ;   Methods = Methods0,
+          Options1 = Options
+      )
+    },
+    client_handlers(Methods, Path, Options1).
 
 client_handlers([], _, _) --> [].
 client_handlers([H|T], Path, Options) -->
@@ -514,7 +520,7 @@ client_handlers([H|T], Path, Options) -->
 client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     path_vars(PathSpec, PathList, PathBindings),
     handler_predicate(Method, PathSpec, Spec, PredName, Options),
-    (   ParamSpecs = Spec.get(parameters)
+    (   spec_parameters(Spec, ParamSpecs, Options)
     ->  client_parameters(ParamSpecs, PathBindings,
                           Params, Query, Optional,
                           CheckParams,
@@ -646,6 +652,11 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Opt, Check, Options) :-
     ),
     client_parameters(T, PathBindings, Ps, Query, Opt, Check0, Options),
     mkconj(Check0, Check1, Check).
+client_parameters([H|T], PathBindings, Params, Query, Opt, Check, Options) :-
+    deref(H, Param, Options),
+    !,
+    client_parameters([Param|T], PathBindings, Params, Query, Opt, Check, Options).
+
 
 param_optional(Spec, Optional) :-
     (   Spec.get(required) == false
