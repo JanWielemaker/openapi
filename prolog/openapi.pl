@@ -328,7 +328,9 @@ yaml_subdoc([H|T], Doc, Sub) :-
 %
 %   Generate documentation clauses for an operationId
 
-path_docs(Method, Path, Spec, openapi_doc(OperationID, Docs), Options) :-
+path_docs(Method, Path, Spec,
+          openapi_doc(OperationID, [path(Path)|Docs]),
+          Options) :-
     handler_predicate(Method, Path, Spec, OperationID, [warn(false)|Options]),
     phrase(path_doc(Spec), Docs).
 
@@ -1625,6 +1627,7 @@ openapi_doc(OperationId, Data, Options) -->
     "\n%\n",
     doc_description(Data.doc),
     doc_args(Data.arguments),
+    doc_path(Data.doc),
     "\n",
     server_skeleton(OperationId, Data.arguments, Options).
 
@@ -1704,7 +1707,7 @@ doc_description(Doc) -->
     "%\n".
 doc_description(Doc) -->
     { memberchk(description(Desc), Doc),
-      split_string(Desc, "\n", "", Lines)
+      string_lines(Desc, Lines)
     }, !,
     lines(Lines, "%  "),
     "%\n".
@@ -1714,6 +1717,14 @@ doc_description(Doc) -->
     "%  ", atom(Summary), "\n",
     "%\n".
 doc_description(_) -->  [].
+
+string_lines(String, Lines) :-
+    split_string(String, "\n", "", Lines0),
+    (   append(Lines, [""], Lines0)
+    ->  true                          % remove terminating newline
+    ;   Lines = Lines0
+    ).
+
 
 lines([], _) --> [].
 lines([H|T], Prefix) --> atom(Prefix), atom(H), "\n", lines(T, Prefix).
@@ -1725,11 +1736,19 @@ doc_arg(p(Name, Type, Description)) -->
     "%  @arg ", camel_case(Name), " ", type(Type), "\n",
     arg_description(Description).
 
+doc_path(Doc) -->
+    { memberchk(path(Path), Doc) },
+    !,
+    "%\n%  @see Path = ", atom(Path), "\n".
+doc_path(_) -->
+    [].
+
 arg_description(options(List)) -->
     !,
     arg_options(List).
 arg_description(Description) -->
-    { split_string(Description, "\n", "", Lines) },
+    { string_lines(Description, Lines)
+    },
     lines(Lines, "%       ").
 
 arg_options([]) --> [].
