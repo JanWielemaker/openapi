@@ -668,6 +668,8 @@ client_parameters([H|T], PathBindings, Params, Query, Opt, Check, Options) :-
 param_optional(Spec, Optional) :-
     (   Spec.get(required) == false
     ->  Optional = optional
+    ;   _Default = Spec.get(schema).get(default)
+    ->  Optional = optional
     ;   Optional = required
     ).
 
