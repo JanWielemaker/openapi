@@ -1803,16 +1803,16 @@ arg_description(options(List)) -->
     !,
     arg_options(List).
 arg_description(Description) -->
-    { string_lines(Description, Lines)
-    },
+    { string_lines(Description, Lines) },
     lines(Lines, "%       ").
 
 arg_options([]) --> [].
 arg_options([H|T]) --> arg_option(H), arg_options(T).
 
 arg_option(p(Name, Type, Description)) -->
+    { string_lines(Description, Lines) },
     "%       - ", quoted_atom(Name), "(+", type(Type), ")", "\n",
-    "%         ", atom(Description), "\n".
+    lines(Lines, "%         ").
 
 type(list(option)) --> !.
 type(url(URL)) -->
