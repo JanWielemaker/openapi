@@ -301,7 +301,12 @@ hp_schema(Spec, Options) -->
     { json_type(Spec, Type, Options),
       json_param_type(Type, ParmType)
     },
+    !,
     [ ParmType ].
+hp_schema(_Spec, _Options) -->
+    { current_prolog_flag(debug, true),
+      gtrace, fail
+    }.
 
 json_param_type(array(Type), list(openapi(Type))) :- !.
 json_param_type(Type, openapi(Type)).
