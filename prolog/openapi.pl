@@ -1093,6 +1093,7 @@ api_type(boolean,  boolean,    -,           boolean).
 api_type(date,     string,     date,        date).
 api_type(dateTime, string,     'date-time', date_time).
 api_type(password, string,     password,    password).
+api_type(uri,      string,     uri,         uri). % Not in OAS
 
 %!  oas_type(+Type, ?In, ?Out) is det.
 
@@ -1116,6 +1117,11 @@ oas_type(float, In, Out) :-
 oas_type(string, In, Out) :-
     (   var(In)
     ->  to_string(Out, In)
+    ;   to_atom(In, Out)
+    ).
+oas_type(uri, In, Out) :-
+    (   var(In)
+    ->  to_atom(Out, In)
     ;   to_atom(In, Out)
     ).
 oas_type(binary, In, Out) :-
