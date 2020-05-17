@@ -564,6 +564,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ->  append(Params1, [Result|ClientOptionArg], AllParams)
     ;   append(Params1, ClientOptionArg, AllParams)
     ),
+    spec_security(Spec, _Sec, Options),
+%   writeln(PredName-Sec),
     prolog_load_context(module, Module),
     (   PathBindings == []
     ->  Path = PathSpec,
@@ -718,6 +720,59 @@ request_body(_, _, _, content(MediaType, _Schema, _Var, _Descr), _, _) :-
     domain_error(openapi(content_type), MediaType).
 request_body(_, _, _, _, true, []).
 
+
+		 /*******************************
+		 *           SECURITY		*
+		 *******************************/
+
+%!  spec_security(+MethodSpec, -Security:list, +Options) is det.
+%
+%   Decode the required authentication for   sending a request. Security
+%   is a list of admissible authentication methods and has the following
+%   possible values:
+%
+%     - public
+%       No authentication needed. This is (with a warning) also emitted
+%       for schemes we do not yet support.
+%     - http(Scheme, Args)
+%       For http `basic` and http `bearer` authentications.
+%     - api_key(header(Header), Args)
+%       We need to provide an api key in an additional header named
+%       Header.
+%
+%   @tbd Currently only deals with authorization we need in dealing with
+%   the hypothesis API.
+
+spec_security(Spec, Security, Options) :-
+    maplist(security(Options), Spec.get(security), Security),
+    Security \== [],
+    !.
+spec_security(_, [public], _).
+
+security(Options, Sec, Security) :-
+    dict_pairs(Sec, _, [Scheme-Args]),
+    option(yaml(Doc), Options),
+    yaml_subdoc([components, securitySchemes,Scheme], Doc, SchemeObj),
+    security_scheme(SchemeObj, Args, Security, Options).
+security(_Options, Sec, public) :-
+    dict_pairs(Sec, _, []),
+    !.
+
+security_scheme(Dict, Args, http(Scheme, Args), _) :-
+    _{type: "http", scheme: SchemeS} :< Dict,
+    !,
+    atom_string(Scheme, SchemeS).
+security_scheme(Dict, Args, api_key(header(Name), Args), _) :-
+    _{type: "apiKey", in: "header", name: NameS} :< Dict,
+    !,
+    atom_string(Name, NameS).
+security_scheme(Dict, _, public, Options) :-
+    warning(openapi(unknown_security_scheme(Dict)), Options).
+
+
+		 /*******************************
+		 *       RUNTIME SUPPORT	*
+		 *******************************/
 
 :- public
     assemble_query/7,
