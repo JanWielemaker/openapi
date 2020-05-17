@@ -81,7 +81,7 @@ openapi_server(File, Options) :-
     throw(error(context_error(nodirective, openapi_server(File, Options)), _)).
 
 expand_openapi_server(File, Options,
-                      [ (:- discontiguous((openapi_handler/9,
+                      [ (:- discontiguous((openapi_handler/10,
                                            openapi_doc/2,
                                            openapi_error_hook/3)))
                       | Clauses
@@ -196,13 +196,15 @@ path_handlers([Method-Spec|T], Path, Options) -->
     [Fact, Docs],
     path_handlers(T, Path, Options).
 
-%! path_handler(+Path, +Method, +Spec, -PathList, -Request, -Content,
-%!		?Result, -Handler) is det.
+%!  path_handler(+Path, +Method, +Spec, -Handler, +Options) is det.
+%
+%   Gather information about Method for  Path   from  the YAML term Spec
+%   that describes this pair.
 
 path_handler(Path, Method, Spec,
              openapi_handler(Method, PathList, SegmentMatches,
                              Request, AsOption, OptionParam,
-                             Content, Responses, Handler),
+                             Content, Responses, Security, Handler),
              Options) :-
     path_vars(Path, PathList, PathBindings),
     (   spec_parameters(Spec, ParamSpecs, Options)
@@ -230,6 +232,7 @@ path_handler(Path, Method, Spec,
     append(Params1, [Result|OptionParams], AllParams),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
+    spec_security(Spec, Security, Options),
     handler_predicate(Method, Path, Spec, PredName, Options),
     Handler =.. [PredName|AllParams].
 
@@ -943,7 +946,7 @@ openapi_dispatch(M:Request) :-
     atom_concat(Root, Path, FullPath),
     M:openapi_handler(Method, Path, Segments,
                       Required, AsOption, OptionParam, Content,
-                      Responses,
+                      Responses, _Security,
                       Handler),
     !,
     (   catch(openapi_run(M:Request,
@@ -1943,7 +1946,7 @@ type(Type, List, Tail) :-
 doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}, Options) :-
     member(openapi_handler(_Method, _PathList, Segments,
                            Request, AsOption, OptionParam,
-                           Content, Responses, Handler), Clauses),
+                           Content, Responses, _Security, Handler), Clauses),
     Handler =.. [OperationId|Args],
     (   memberchk(openapi_doc(OperationId, Doc), Clauses),
         maplist(doc_param(from(Segments,
