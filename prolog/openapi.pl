@@ -737,11 +737,13 @@ request_body(_, _, _, _, true, []).
 %     - public
 %       No authentication needed. This is (with a warning) also emitted
 %       for schemes we do not yet support.
-%     - http(Scheme, Args)
-%       For http `basic` and http `bearer` authentications.
-%     - api_key(header(Header), Args)
+%     - http(Scheme, Name, Args)
+%       For http `basic` and http `bearer` authentications.  Name is
+%       the name of the security scheme from the OpenAPI document.
+%     - api_key(header(Header), Name, Args)
 %       We need to provide an api key in an additional header named
-%       Header.
+%       Header. Name is the name of the security scheme from the OpenAPI
+%       document.
 %
 %   @tbd Currently only deals with authorization we need in dealing with
 %   the hypothesis API.
@@ -756,21 +758,23 @@ security(Options, Sec, Security) :-
     dict_pairs(Sec, _, [Scheme-Args]),
     option(yaml(Doc), Options),
     yaml_subdoc([components, securitySchemes,Scheme], Doc, SchemeObj),
-    security_scheme(SchemeObj, Args, Security, Options).
+    security_scheme(Scheme, SchemeObj, Args, Security, Options).
 security(_Options, Sec, public) :-
     dict_pairs(Sec, _, []),
     !.
 
-security_scheme(Dict, Args, http(Scheme, Args), _) :-
+security_scheme(SchemeName, Dict, Args,
+                http(Scheme, SchemeName, Args), _Options) :-
     _{type: "http", scheme: SchemeS} :< Dict,
     !,
     atom_string(Scheme, SchemeS).
-security_scheme(Dict, Args, api_key(header(Name), Args), _) :-
+security_scheme(SchemeName, Dict, Args,
+                api_key(header(Name), SchemeName, Args), _Options) :-
     _{type: "apiKey", in: "header", name: NameS} :< Dict,
     !,
     atom_string(Name, NameS).
-security_scheme(Dict, _, public, Options) :-
-    warning(openapi(unknown_security_scheme(Dict)), Options).
+security_scheme(SchemeName, Dict, _, public, Options) :-
+    warning(openapi(unknown_security_scheme(SchemeName, Dict)), Options).
 
 
 		 /*******************************
@@ -1738,6 +1742,7 @@ openapi_doc(OperationId, Data, Options) -->
     doc_mode(OperationId, Data.arguments),
     "\n%\n",
     doc_description(Data.doc),
+    doc_security(Data.security),
     doc_args(Data.arguments),
     doc_path(Data.doc),
     "\n",
@@ -1898,6 +1903,25 @@ empty_line(Line) :-
 lines([], _) --> [].
 lines([H|T], Prefix) --> atom(Prefix), atom(H), "\n", lines(T, Prefix).
 
+doc_security([public]) -->
+    !.
+doc_security(List) -->
+    "%  Authentication options:\n",
+    doc_security_list(List),
+    "%\n".
+
+doc_security_list([]) -->
+    [].
+doc_security_list([H|T]) -->
+    doc_security_option(H),
+    doc_security_list(T).
+
+doc_security_option(public) -->
+    "%   - no authentication required\n".
+doc_security_option(Term) -->
+    { arg(2, Term, Name) },
+    "%   - ", atom(Name), "\n".
+
 doc_args([]) --> [].
 doc_args([H|T]) --> doc_arg(H), doc_args(T).
 
@@ -1943,10 +1967,12 @@ type(Type, List, Tail) :-
 %   Get  a  dict  that  contains   all    information   to  produce  the
 %   documentation.
 
-doc_data(Clauses, OperationId, _{arguments:Params, doc:Doc}, Options) :-
+doc_data(Clauses, OperationId,
+         _{arguments:Params, doc:Doc, security:Security},
+         Options) :-
     member(openapi_handler(_Method, _PathList, Segments,
                            Request, AsOption, OptionParam,
-                           Content, Responses, _Security, Handler), Clauses),
+                           Content, Responses, Security, Handler), Clauses),
     Handler =.. [OperationId|Args],
     (   memberchk(openapi_doc(OperationId, Doc), Clauses),
         maplist(doc_param(from(Segments,
