@@ -69,8 +69,6 @@ parameters as well as responses.
 
 :- meta_predicate
     openapi_dispatch(:).
-:- multifile
-    security_options/2.                         % +Security, -Options
 
 %!  openapi_server(+File, +Options)
 %
@@ -581,7 +579,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
              openapi:assemble_query(Module, Method, Path,
                                     Query, Optional, ClientOptions,
                                     URL),
-             openapi:assemble_security(Security, SecOptions),
+             context_module(CM),
+             openapi:assemble_security(Security, CM, SecOptions),
              append(SecOptions, RequestOptions, OpenOptions),
              debug(openapi(client), '~w ~w', [Method, URL]),
              setup_call_cleanup(
@@ -932,17 +931,18 @@ reply_result(data,  _Code, Result, Result).
 reply_result(error, Code, Result, _ ) :-
     throw(error(rest_error(Code, Result), _)).
 
-%!  assemble_security(+Security, -HTTPOptions)
+%!  assemble_security(+Security, +ClientModule, -HTTPOptions)
 %
 %   Assemble additional HTTP options from the security description.
 
-:- public assemble_security/2.
-assemble_security(Security, SecOptions) :-
-    security_options(Security, SecOptions), !.
-assemble_security(Security, []) :-
+:- public assemble_security/3.
+assemble_security(Security, CM, SecOptions) :-
+    current_predicate(CM:security_options/2),
+    CM:security_options(Security, SecOptions), !.
+assemble_security(Security, _, []) :-
     memberchk(public, Security),
     !.
-assemble_security(Security, _) :-
+assemble_security(Security, _, _) :-
     existence_error(security_data, Security).
 
 %!  security_options(+Security:list, -SecOptions:list)
