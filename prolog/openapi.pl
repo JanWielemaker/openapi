@@ -69,6 +69,8 @@ parameters as well as responses.
 
 :- meta_predicate
     openapi_dispatch(:).
+:- multifile
+    security_options/2.                         % +Security, -Options
 
 %!  openapi_server(+File, +Options)
 %
@@ -560,15 +562,14 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         fail
     ),
     content_parameter(Method, Spec, Content, Params, Params1, Options),
-    request_body(Method, PathSpec, Module, Content, ContentGoal, OpenOptions),
+    request_body(Method, PathSpec, Module, Content, ContentGoal, RequestOptions),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     (   response_has_data(Responses)
     ->  append(Params1, [Result|ClientOptionArg], AllParams)
     ;   append(Params1, ClientOptionArg, AllParams)
     ),
-    spec_security(Spec, _Sec, Options),
-%   writeln(PredName-Sec),
+    spec_security(Spec, Security, Options),
     prolog_load_context(module, Module),
     (   PathBindings == []
     ->  Path = PathSpec,
@@ -580,6 +581,8 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
              openapi:assemble_query(Module, Method, Path,
                                     Query, Optional, ClientOptions,
                                     URL),
+             openapi:assemble_security(Security, SecOptions),
+             append(SecOptions, RequestOptions, OpenOptions),
              debug(openapi(client), '~w ~w', [Method, URL]),
              setup_call_cleanup(
                  openapi:http_open(URL, In,
@@ -928,6 +931,30 @@ read_reply(media(application/json, _), Type, As, Code, In, Result) :-
 reply_result(data,  _Code, Result, Result).
 reply_result(error, Code, Result, _ ) :-
     throw(error(rest_error(Code, Result), _)).
+
+%!  assemble_security(+Security, -HTTPOptions)
+%
+%   Assemble additional HTTP options from the security description.
+
+:- public assemble_security/2.
+assemble_security(Security, SecOptions) :-
+    security_options(Security, SecOptions), !.
+assemble_security(Security, []) :-
+    memberchk(public, Security),
+    !.
+assemble_security(Security, _) :-
+    existence_error(security_data, Security).
+
+%!  security_options(+Security:list, -SecOptions:list)
+%
+%   Multifile hook to provide additional HTTP   options  for realizing a
+%   specific security/authentication. The application   must define this
+%   hook for dealing with authentication.   The possible Security inputs
+%   are described with spec_security/3. If this   hook fails __and__ the
+%   API  handler  may  be  accessed   without  security  access  without
+%   additional options is tried. If this   hook fails and authentication
+%   is  required  the  client  call    raises   an  existence_error  for
+%   `security_data`.
 
 
 		 /*******************************
