@@ -2205,6 +2205,11 @@ prolog:message(openapi(no_type, Param)) -->
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
+prolog:error_message(openapi_invalid_reply(Code, ExCodes, Error)) -->
+    [ 'OpenAPI: request replied code ~p (expected one of ~p)'-[Code, ExCodes],
+      nl,
+      '  Document: ~p'-[Error]
+    ].
 prolog:message_context(rest(Name, Where, Type)) -->
     [ ' (REST '-[] ],
     rest_context(Name, Where, Type),
