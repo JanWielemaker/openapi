@@ -73,6 +73,7 @@ usage :-
     format(user_error, '
   --client[=file]          Generate client
   --no-type-check-results  Do not type check results
+  --module[=name]          Generate a module (client only)
   --server[=file]          Generate server
   --ui		           Include Swagger UI (implies --httpd)
   --httpd                  Include REST HTTP server

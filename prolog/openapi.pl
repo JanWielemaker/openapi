@@ -1685,8 +1685,10 @@ doc_output(Stream, close(Stream), Options) :-
 doc_output(current_output, true, _).
 
 doc_gen(Stream, File, Clauses, Options) :-
-    file_header(Stream, File, Options),
-    forall(doc_data(Clauses, OperationId, Data, Options),
+    findall(OperationId-Data,
+            doc_data(Clauses, OperationId, Data, Options), Pairs),
+    file_header(Stream, File, [operations(Pairs)|Options]),
+    forall(member(OperationId-Data, Pairs),
            (   phrase(openapi_doc(OperationId, Data, Options), S)
            ->  format(Stream, '~s', [S])
            ;   warning(openapi(doc_failed, OperationId), Options)
@@ -1695,6 +1697,7 @@ doc_gen(Stream, File, Clauses, Options) :-
 file_header(Stream, File, Options) :-
     option(mode(client), Options),
     !,
+    client_module(Stream, File, Options),
     client_options(Options, ClientOptions),
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n~n', []),
@@ -1710,6 +1713,49 @@ file_header(Stream, File, Options) :-
     format(Stream, '~n', []),
     format(Stream, ':- openapi_server(~q, []).~n~n', [File]).
 file_header(_, _, _).
+
+%!  client_module(+Stream, +SpecFile, +Options)
+%
+%   Emit a module  header  for  the   generated  client  if  the  option
+%   module(Module) is present. If `Module` is  `true`, derive the module
+%   from the client filename or the SpecFile.
+
+client_module(Stream, SpecFile, Options) :-
+    module_name(Module, SpecFile, Options),
+    option(operations(Ops), Options),
+    !,
+    format(Stream, ':- module(~q,~n~t[ ~12|', [Module]),
+    exports(Ops, Stream),
+    format(Stream, '~t~10|]).~n', []).
+client_module(_, _, _).
+
+module_name(Module, SpecFile, Options) :-
+    option(module(M), Options),
+    (   M == true
+    ->  option(file(File), Options, SpecFile),
+        file_base_name(File, Base),
+        file_name_extension(Module, _, Base)
+    ;   Module = M
+    ).
+
+exports([], _).
+exports([OperationId-Data|T], Stream) :-
+    (   T == []
+    ->  Sep = ''
+    ;   Sep = ','
+    ),
+    export(Stream, OperationId, Data.arguments, Sep),
+    exports(T, Stream).
+
+export(Stream, OperationId, Args, Sep) :-
+    length(Args, Arity),
+    phrase(mode_args(Args), Codes),
+    format(Stream, '~t~12|~q~w~t~48|% ~s~n',
+           [OperationId/Arity, Sep, Codes]).
+
+%!  client_options(+Options, -ClientOptions) is det.
+%
+%   Pass options for generatingn the client at runtime.
 
 client_options(Options, [warn(false),type_check_results(Mode)]) :-
     option(type_check_results(Mode), Options),
