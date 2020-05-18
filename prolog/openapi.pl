@@ -56,6 +56,8 @@
 :- use_module(library(http/http_json)).
 :- use_module(library(http/http_parameters)).
 :- use_module(library(http/http_header)).
+:- use_module(library(listing), [portray_clause/2]).
+:- use_module(library(pprint), [print_term/2]).
 :- use_module(library(http/http_open)).         % http_open/3 is called by
                                                 % generated code.
 
@@ -908,8 +910,9 @@ openapi_read_reply(Code, ContentType, Responses, In, Result) :-
     (   memberchk(response(Code, As, ExpectedContentType, Type, _Result, _Comment),
                   Responses)
     ->  true
-    ;   maplist(arg(1), Responses, ExCodes),
-        must_be(oneof(ExCodes), Code)
+    ;   read_reply(ParsedContentType, -, data, Code, In, Error),
+        maplist(arg(1), Responses, ExCodes),
+        throw(error(openapi_invalid_reply(Code, ExCodes, Error), _))
     ),
     content_matches(ExpectedContentType, ParsedContentType, ProcessType),
     read_reply(ProcessType, Type, As, Code, In, Result).
@@ -921,6 +924,10 @@ content_matches(Expected, Got, _) :-
 
 read_reply(media(application/json, _), Type, As, Code, In, Result) :-
     json_read_dict(In, Result0, []),
+    (   debugging(openapi(reply_object))
+    ->  print_term(Result0, [])
+    ;   true
+    ),
     (   Type = (-)
     ->  Result = Result0
     ;   json_check(Type, Result0, Result1)
