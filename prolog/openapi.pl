@@ -1387,6 +1387,9 @@ json_check(numeric(Type, Domain), In, Out) :-
     ->  true
     ;   domain_error(Domain, Out)
     ).
+json_check(any, In, Out) :-
+    !,
+    In = Out.
 json_check(Type, In, Out) :-
     oas_type(Type, In, Out).
 
