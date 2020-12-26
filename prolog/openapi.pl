@@ -1355,7 +1355,7 @@ json_check(allOf(Types), In, Out) :-
     ;   maplist(json_check_out_in_type(Out), Ins, Types),
         join_dicts(Ins, In)
     ).
-json_check(anyof(Types), In, Out) :-
+json_check(anyOf(Types), In, Out) :-
     !,
     (   member(Type, Types),
         catch(json_check(Type, In, Out), _, fail)
@@ -1590,8 +1590,8 @@ json_type(Spec, allOf(Types), Options) :-
     _{allOf:List} :< Spec,
     !,
     maplist(opts_json_type(Options), List, Types).
-json_type(Spec, oneOf(Types), Options) :-
-    _{oneOf:List} :< Spec,
+json_type(Spec, anyOf(Types), Options) :-
+    _{anyOf:List} :< Spec,
     !,
     maplist(opts_json_type(Options), List, Types).
 json_type(Spec, not(Type), Options) :-
@@ -1614,7 +1614,7 @@ json_type(Spec, Type, Options) :-
     option(base_uri(Base), Options),
     uri_normalized(URLS, Base, URL),
     (   url_type(URL, Spec2)
-    ->  atom_string(NewBase, URLS),
+    ->  atom_string(NewBase, URL),
         json_type(Spec2, Type, [base_uri(NewBase)|Options])
     ;   Type = url(URL)
     ).
@@ -1655,8 +1655,9 @@ numeric_type(number).
 url_type(URL, Type) :-
     uri_components(URL, Components),
     uri_data(scheme, Components, file),
-    uri_data(path, Components, File),
+    uri_data(path, Components, FileEnc),
     uri_data(fragment, Components, Fragment),
+    uri_encoded(path, File, FileEnc),
     openapi_read(File, Spec),
     atomic_list_concat(Segments, /, Fragment),
     yaml_subdoc(Segments, Spec, Type).
