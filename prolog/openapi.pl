@@ -982,7 +982,7 @@ openapi_dispatch(M:Request) :-
     memberchk(method(Method), Request),
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
-    M:openapi_handler(Method, Path, Segments,
+    openapi_handler_match(M, Method, Path, Segments,
                       Required, AsOption, OptionParam, Content,
                       Responses, _Security,
                       Handler),
@@ -997,6 +997,34 @@ openapi_dispatch(M:Request) :-
     ->  true
     ;   openapi_error(M, failed, Responses)
     ).
+
+openapi_handler_match(  M, Method, Path, Segments,
+                        Required, AsOption, OptionParam, Content,
+                        Responses, Security,
+                        Handler) :-
+    M:openapi_handler(
+        Method, PathSegments, Segments,
+        Required, AsOption, OptionParam, Content,
+        Responses, Security,
+        Handler),
+    atom_codes(Path, PathCodes),
+    phrase(path_params_match(PathSegments, Segments), PathCodes),
+    !.
+
+path_params_match([], [])  --> [], !.
+ path_params_match([PathSegment | PathSegments], Segments) -->
+    {   nonvar(PathSegment),
+        atom_codes(PathSegment, Codes)
+    },
+    Codes,
+    path_params_match( PathSegments, Segments).
+  path_params_match([PathSegment | PathSegments], [ segment(_, Segment, _, _, _) | Segments]) -->
+    { var(PathSegment) 
+    },
+    string_without([0'/], Codes),
+    { atom_codes(Segment, Codes) 
+    },
+    path_params_match( PathSegments, Segments).
 
 openapi_run(Module:Request,
             Segments,
