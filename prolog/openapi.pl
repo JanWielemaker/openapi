@@ -1181,6 +1181,17 @@ http_error_status(rest(_,_,_), _, 400).
 		 *            TYPES		*
 		 *******************************/
 
+%!  api_type(?Type, ?Format, ?TypeID) is det.
+%
+%
+
+api_type(Type, Format, TypeID) :-
+    api_type(_Name, Type, Format, TypeID), !.
+api_type(Type, Format, _TypeID) :-
+    print_message(error, openapi(unknown_type, Type, Format)),
+    fail.
+
+
 %!  api_type(?Name, ?Type, ?Format, ?TypeID)
 %
 %   The formats defined by the OAS are:
@@ -1566,7 +1577,7 @@ json_type(Spec, Type, _) :-
     !,
     atom_string(Type0, TypeS),
     atom_string(Format, FormatS),
-    once(api_type(_, Type0, Format, Type1)),
+    api_type(Type0, Format, Type1),
     numeric_domain(Spec, Type0, Type1, Type).
 json_type(Spec, object(Props), Options) :-
     _{required:ReqS, properties:PropSpecs} :< Spec,
@@ -1606,7 +1617,7 @@ json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
     !,
     atom_string(Type0, TypeS),
-    once(api_type(_, Type0, -, Type1)),
+    api_type(Type0, -, Type1),
     numeric_domain(Spec, Type0, Type1, Type).
 json_type(Spec, Type, Options) :-
     _{'$ref':URLS} :< Spec,
@@ -2206,6 +2217,10 @@ prolog:message(openapi(doc_failed, OperationId)) -->
       [OperationId] ].
 prolog:message(openapi(no_type, Param)) -->
     [ 'OpenAPI: no type for parameter ~p (assuming "string")'-[Param] ].
+prolog:message(openapi(unknown_type, Type, -)) -->
+    [ 'OpenAPI: unrecognized type `~p`'-[Type] ].
+prolog:message(openapi(unknown_type, Type, Format)) -->
+    [ 'OpenAPI: unrecognized type `~p` with format `~p`'-[Type, Format] ].
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
