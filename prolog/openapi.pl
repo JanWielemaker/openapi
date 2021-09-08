@@ -1227,6 +1227,9 @@ api_type(date,     string,     date,        date).
 api_type(dateTime, string,     'date-time', date_time).
 api_type(password, string,     password,    password).
 api_type(uri,      string,     uri,         uri). % Not in OAS
+api_type(_,        Type,       Format,     _) :- % Print error hint for the unknown type
+    print_message(error, format('Unrecognized type `~w` with format `~w` ', [Type, Format])),
+    fail. 
 
 %!  oas_type(+Type, ?In, ?Out) is det.
 
