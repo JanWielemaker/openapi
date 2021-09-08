@@ -1,5 +1,5 @@
 name(openapi).
-version('0.2').
+version('0.2.1').
 title('OpenAPI (Swagger) interface').
 keywords(['OpenAPI', 'Swagger', 'REST', 'HTTP', service]).
 author( 'Jan Wielemaker', 'J.Wielemaker@vu.nl' ).
