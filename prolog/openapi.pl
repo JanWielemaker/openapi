@@ -2172,10 +2172,12 @@ warning(_Term, Options) :-
 warning(Term, _Options) :-
     print_message(warning, Term).
 
+:- if(current_prolog_flag(gui, true)).
 start_debugger :-
     current_prolog_flag(debug, true),
     !,
     gtrace.
+:- endif.
 start_debugger.
 
 start_debugger_fail :-
