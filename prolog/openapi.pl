@@ -903,6 +903,15 @@ segment_value(Type, Segment, Prolog) :-
 
 :- public openapi_read_reply/5.
 
+openapi_read_reply(Code, _ContentType, Responses, _In, Result) :-
+    no_content(Code),
+    !,
+    (   memberchk(response(Code, _As, _ExpectedContentType, _Type, _Result, _Comment),
+                  Responses)
+    ->  Result = true
+    ;   maplist(arg(1), Responses, ExCodes),
+        throw(error(openapi_invalid_reply(Code, ExCodes, ""), _))
+    ).
 openapi_read_reply(Code, ContentType, Responses, In, Result) :-
     debug(openapi(reply), 'Got code ~p; type: ~p; response schemas: ~p',
           [Code, ContentType, Responses]),
@@ -916,6 +925,8 @@ openapi_read_reply(Code, ContentType, Responses, In, Result) :-
     ),
     content_matches(ExpectedContentType, ParsedContentType, ProcessType),
     read_reply(ProcessType, Type, As, Code, In, Result).
+
+no_content(204).
 
 content_matches(ContentType, ContentType, ContentType) :- !.
 content_matches(media(Type, _), media(Type, Attrs), media(Type, Attrs)) :- !.
