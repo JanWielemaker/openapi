@@ -1635,6 +1635,9 @@ json_type(Spec, Type, Options) :-
         json_type(Spec2, Type, [base_uri(NewBase)|Options])
     ;   Type = url(URL)
     ).
+json_type(_{properties:_{}}, Type, _Options) :-
+    !,
+    Type = (-).
 json_type(_Spec, _Type, _Options) :-
     start_debugger_fail.
 
