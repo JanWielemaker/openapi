@@ -1729,6 +1729,7 @@ file_header(Stream, File, Options) :-
     client_options(Options, ClientOptions),
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n~n', []),
+    format(Stream, ':- use_module(library(debug)).~n~n', []),
     portray_clause(Stream, (:- openapi_client(File, ClientOptions))),
     nl(Stream).
 file_header(Stream, File, Options) :-
