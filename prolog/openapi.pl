@@ -323,6 +323,13 @@ hp_description(Spec) -->
 hp_description(_) --> [].
 
 deref(Spec, Yaml, Options) :-
+    _{'$ref':URLS} :< Spec,
+    sub_atom(URLS, 0, _, _, './'),
+    !,
+    option(base_uri(Base), Options),
+    uri_normalized(URLS, Base, URL),
+    url_yaml(URL, Yaml).
+deref(Spec, Yaml, Options) :-
     _{'$ref':Ref} :< Spec,
     atomic_list_concat(Segments, /, Ref),
     !,
@@ -1641,7 +1648,7 @@ json_type(Spec, Type, Options) :-
     !,
     option(base_uri(Base), Options),
     uri_normalized(URLS, Base, URL),
-    (   url_type(URL, Spec2)
+    (   url_yaml(URL, Spec2)
     ->  atom_string(NewBase, URL),
         json_type(Spec2, Type, [base_uri(NewBase)|Options])
     ;   Type = url(URL)
@@ -1678,22 +1685,23 @@ numeric_domain(_, _Type0, Type, Type).
 numeric_type(integer).
 numeric_type(number).
 
-%!  url_type(+URL, -Type:json) is semidet.
+%!  url_yaml(+URL, -Yaml:json) is semidet.
 %
 %   Assuming URL points to  a  local   file  and  fragment  thereof that
-%   specifies a type, Type is the JSON representation of this type.
+%   specifies a type, Type is the JSON/YAML representation of this type.
 
-url_type(URL, Type) :-
+url_yaml(URL, Yaml) :-
     uri_components(URL, Components),
     uri_data(scheme, Components, file),
     uri_data(path, Components, FileEnc),
     uri_data(fragment, Components, Fragment),
     uri_encoded(path, File, FileEnc),
-    openapi_read(File, Spec),
-    atomic_list_concat(Segments, /, Fragment),
-    yaml_subdoc(Segments, Spec, Type).
-
-
+    openapi_read(File, Yaml0),
+    (   var(Fragment)
+    ->  Yaml = Yaml0
+    ;   atomic_list_concat(Segments, /, Fragment),
+        yaml_subdoc(Segments, Yaml0, Yaml)
+    ).
 
 
 		 /*******************************
