@@ -499,7 +499,7 @@ to_content_type(Type, _) :-
 %
 %     - openapi_server(URL)
 %       One or more clauses describing the location of the server
-%       as defined in the Swagger file.
+%       as defined in the OpenAPI file.
 %     - Clauses that call the REST methods.  The name is the
 %       `operationId` described in the Swagger file.  The arguments
 %       are defined by the parameters and response from the
@@ -509,14 +509,22 @@ to_content_type(Type, _) :-
 client_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
-    server_clauses(JSONTerm.servers),
+    server_url_clauses(JSONTerm.servers, Options),
     client_path_clauses(Paths, Options),
     json_schema_clauses(JSONTerm, Options).
 
-server_clauses([]) --> [].
-server_clauses([H|T]) --> server_clause(H), server_clauses(T).
+server_url_clauses(_Servers, Options) -->
+    { option(server_url(ServerURL), Options)
+    },
+    !,
+    [ openapi_server(ServerURL) ].
+server_url_clauses(Servers, _Options) -->
+    server_url_clauses(Servers).
 
-server_clause(Server) -->
+server_url_clauses([]) --> [].
+server_url_clauses([H|T]) --> server_url_clauses(H), server_url_clauses(T).
+
+server_url_clauses(Server) -->
     [ openapi_server(Server.get(url)) ].
 
 client_path_clauses([], _) --> [].
@@ -1748,7 +1756,7 @@ file_header(Stream, File, Options) :-
     option(mode(client), Options),
     !,
     client_module(Stream, File, Options),
-    client_options(Options, ClientOptions),
+    findall(Opt, client_option(Opt, Options), ClientOptions),
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n~n', []),
     format(Stream, ':- use_module(library(debug)).~n~n', []),
@@ -1804,14 +1812,15 @@ export(Stream, OperationId, Args, Sep) :-
     format(Stream, '~t~12|~q~w~t~48|% ~s~n',
            [OperationId/Arity, Sep, Codes]).
 
-%!  client_options(+Options, -ClientOptions) is det.
+%!  client_option(-ClientOption, +Options) is nondet.
 %
 %   Pass options for generatingn the client at runtime.
 
-client_options(Options, [warn(false),type_check_results(Mode)]) :-
-    option(type_check_results(Mode), Options),
-    !.
-client_options(_, [warn(false)]).
+client_option(warn(false), _Options).
+client_option(type_check_results(Mode), Options) :-
+    option(type_check_results(Mode), Options).
+client_option(server_url(URL), Options) :-
+    option(server_url(URL), Options).
 
 server_header(Stream, File, Options) :-
     (   option(httpd(true), Options)

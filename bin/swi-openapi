@@ -75,6 +75,7 @@ usage :-
   --no-type-check-results  Do not type check results
   --module[=name]          Generate a module (client only)
   --server[=file]          Generate server
+  --server_url=URL         Make client contact server at URL
   --ui		           Include Swagger UI (implies --httpd)
   --httpd                  Include REST HTTP server
 ', []).
