@@ -211,7 +211,7 @@ path_handler(Path, Method, Spec,
     path_vars(Path, PathList, PathBindings),
     (   spec_parameters(Spec, ParamSpecs, Options)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
-                          Request, AsOption, Params,
+                          Request, AsOption, Params, HdrParams,
                           [ path(Path),
                             method(Method)
                           | Options
@@ -249,10 +249,10 @@ spec_parameters(Spec, Parameters, Options) :-
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
 %!                    -SegmentMatches, -RequestParams, -RequestOptions,
-%!                    -HandlerParams, +Options) is det.
+%!                    -HandlerParams, -HeaderOptions, +Options) is det.
 
-server_parameters([], _, [], [], [], [], _).
-server_parameters([H|T], PathB, Segs, Request, AsOption, Params, Options) :-
+server_parameters([], _, [], [], [], [], [], _).
+server_parameters([H|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
@@ -261,13 +261,13 @@ server_parameters([H|T], PathB, Segs, Request, AsOption, Params, Options) :-
     (   Opts = [optional(true)|_],
         \+ option(optional(unbound), Options)
     ->  AsOption = [R0|AsOpts],
-        server_parameters(T, PathB, Segs, Request, AsOpts, Params, Options)
+        server_parameters(T, PathB, Segs, Request, AsOpts, Params, HdrOpts, Options)
     ;   Request = [R0|Req],
         Params  = [P0|Ps],
-        server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options)
+        server_parameters(T, PathB, Segs, Req, AsOption, Ps, HdrOpts, Options)
     ).
 server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
-                  Req, AsOption, [P0|Ps], Options) :-
+                  Req, AsOption, [P0|Ps], HdrOpts, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
@@ -279,12 +279,25 @@ server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
         error(openapi(missing_path_parameter(Method, Name, Path)), Options),
         fail
     ),
-    server_parameters(T, PathB, Segs, Req, AsOption, Ps, Options).
-server_parameters([H|T], PathB, Segs, Request, AsOption, Params, Options) :-
+    server_parameters(T, PathB, Segs, Req, AsOption, Ps, HdrOpts, Options).
+server_parameters([H|T], PathB, Segs, Req, AsOption, Params, [R0|HdrOpts], Options) :-
+    _{name:NameS, in:"header"} :< H,
+    !,
+    phrase(http_param_options(H, Options), Opts),
+    atom_string(Name, NameS),
+    R0 =.. [Name,P0,Opts],
+    (   Opts = [optional(true)|_],
+        \+ option(optional(unbound), Options)
+    ->  AsOption = [R0|AsOpts],
+        server_parameters(T, PathB, Segs, Req, AsOpts, Params, HdrOpts, Options)
+    ;   Params  = [P0|Ps],
+        server_parameters(T, PathB, Segs, Req, AsOption, Ps, HdrOpts, Options)
+    ).
+server_parameters([H|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Options) :-
     deref(H, Param, Options),
     !,
-    server_parameters([Param|T], PathB, Segs, Request, AsOption, Params, Options).
-server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, Options) :-
+    server_parameters([Param|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Options).
+server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, _HdrOpts, Options) :-
     error(openapi(parameter_failed(H)), Options),
     fail.
 
