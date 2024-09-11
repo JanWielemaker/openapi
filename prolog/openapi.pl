@@ -1601,7 +1601,9 @@ obj_properties_in([NV|T0], PL, [NV|T]) :-
 obj_properties_in([N-V0|T0], [p(N,Type,Opts)|PT], [N-V|T]) :-
     !,
     (   V0 == null,
-        memberchk(nullable, Opts)
+        (   memberchk(nullable, Opts)
+        ;   \+ memberchk(required, Opts)
+        )
     ->  V = V0
     ;   json_check(Type, V0, V)
     ),
