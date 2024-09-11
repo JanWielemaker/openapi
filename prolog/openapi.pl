@@ -3,8 +3,9 @@
     Author:        Jan Wielemaker
     E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (c)  2018-2020, VU University Amsterdam
+    Copyright (c)  2018-2024, VU University Amsterdam
                               CWI, Amsterdam
+                              SWI-Prolog Solutions b.v.
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -83,7 +84,7 @@ openapi_server(File, Options) :-
     throw(error(context_error(nodirective, openapi_server(File, Options)), _)).
 
 expand_openapi_server(File, Options,
-                      [ (:- discontiguous((openapi_handler/10,
+                      [ (:- discontiguous((openapi_handler/11,
                                            openapi_doc/2,
                                            openapi_error_hook/3)))
                       | Clauses
@@ -205,7 +206,7 @@ path_handlers([Method-Spec|T], Path, Options) -->
 
 path_handler(Path, Method, Spec,
              openapi_handler(Method, PathList, SegmentMatches,
-                             Request, AsOption, OptionParam,
+                             Request, HdrParams, AsOption, OptionParam,
                              Content, Responses, Security, Handler),
              Options) :-
     path_vars(Path, PathList, PathBindings),
@@ -569,34 +570,39 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     handler_predicate(Method, PathSpec, Spec, PredName, Options),
     (   spec_parameters(Spec, ParamSpecs, Options)
     ->  client_parameters(ParamSpecs, PathBindings,
-                          Params, Query, Optional,
+                          Args, HdrParams, Query, Optional,
                           CheckParams,
                           [ path(PathSpec),
                             method(Method)
                           | Options
                           ]),
         (   Optional == []
-        ->  ClientOptionArg = []
-        ;   ClientOptionArg = [ClientOptions]
+        ->  ClientOptionArgs = []
+        ;   ClientOptionArgs = [ClientOptions]
         )
     ;   PathBindings == []
-    ->  Params = [],
+    ->  Args = [],
         Query = [],
         CheckParams = true,
         Optional = [],
-        ClientOptionArg = []
+        ClientOptionArgs = [],
+        HdrParams = []
     ;   error(openapi(not_covered_path_vars(Method, PathSpec, PathBindings)),
               Options),
         fail
     ),
-    content_parameter(Method, Spec, Content, Params, Params1, Options),
+    content_parameter(Method, Spec, Content, Args, Args1, Options),
     request_body(Method, PathSpec, Module, Content, ContentGoal, RequestOptions),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     (   response_has_data(Responses)
-    ->  append(Params1, [Result|ClientOptionArg], AllParams)
-    ;   append(Params1, ClientOptionArg, AllParams)
+    ->  ResultArgs = [Result]
+    ;   ResultArgs = []
     ),
+    append([ Args1,
+             ResultArgs,
+             ClientOptionArgs
+           ], AllArgs),
     spec_security(Spec, Security, Options),
     prolog_load_context(module, Module),
     (   PathBindings == []
@@ -604,14 +610,17 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         PathGoal = true
     ;   PathGoal = atomic_list_concat(PathList, Path)
     ),
-    Head =.. [PredName|AllParams],
+    Head =.. [PredName|AllArgs],
     Body = ( CheckParams, PathGoal, ContentGoal,
              openapi:assemble_query(Module, Method, Path,
-                                    Query, Optional, ClientOptions,
-                                    URL),
+                                    HdrParams, Query, Optional, ClientOptions,
+                                    URL, HdrOptions),
              context_module(CM),
              openapi:assemble_security(Security, CM, SecOptions),
-             append(SecOptions, RequestOptions, OpenOptions),
+             append([ SecOptions,
+                      RequestOptions,
+                      HdrOptions
+                    ], OpenOptions),
              debug(openapi(client), '~w ~w', [Method, URL]),
              setup_call_cleanup(
                  openapi:http_open(URL, In,
@@ -663,13 +672,23 @@ code_has_no_data(Code) :-
     var(Code).                                  % errors
 code_has_no_data(204).                          % No content
 
-%!  client_parameters(+Spec, +PathBindings,
-%!                    -Params, -Required, -Optional,
-%!                    -Check, +Options)
+header_arg(request_header(_Name=Value), Value).
 
-client_parameters([], _, [], [], [], true, _).
-client_parameters([H|T], PathBindings, [P0|Ps],
-                  [qparam(Name,P0,Type,Opt)|Qs], Optional, Check, Options) :-
+%!  client_parameters(+Spec, +PathBindings,
+%!                    -Params, -HdrParams, -Required, -Optional,
+%!                    -Check:callable, +Options)
+%
+%   @arg Params is a list of variables for required arguments of the
+%   client predicate.
+%   @arg Required is a list of qparam(Name,P0,Type,Opt) used for
+%   adding query parameters for required parameters to the URL
+%   @arg Optional is a list of qparam(Name,P0,Type,optional) used for
+%   adding query parameters for optional parameters to the URL
+%   @arg Check is a callable term for validating the arguments,
+
+client_parameters([], _, [], [], [], [], true, _).
+client_parameters([H|T], PathBindings, [A0|Args], HdrParams,
+                  [qparam(Name,A0,Type,Opt)|Qs], Optional, Check, Options) :-
     _{name:NameS, in:"query"} :< H,
     param_optional(H, Opt),
     \+ ( Opt == optional,
@@ -678,18 +697,35 @@ client_parameters([H|T], PathBindings, [P0|Ps],
     !,
     param_type(H, Type, Options),
     atom_string(Name, NameS),
-    client_parameters(T, PathBindings, Ps, Qs, Optional, Check0, Options),
-    mkconj(Check0, true, Check).
+    client_parameters(T, PathBindings, Args, HdrParams, Qs, Optional, Check, Options).
+client_parameters([H|T], PathBindings, [A0|Args], [hparam(Name,A0,Type,Opt)|HdrParams],
+                  Query, Optional, Check, Options) :-
+    _{name:NameS, in:"header"} :< H,
+    param_optional(H, Opt),
+    \+ ( Opt == optional,
+         \+ option(optional(unbound), Options)
+       ),
+    !,
+    param_type(H, Type, Options),
+    atom_string(Name, NameS),
+    client_parameters(T, PathBindings, Args, HdrParams, Query, Optional, Check, Options).
 client_parameters([H|T], PathBindings,
-                  Params, Query, [qparam(Name,_,Type,optional)|OptT],
+                  Params, HdrParams, Query, [qparam(Name,_,Type,optional)|OptT],
                   Check, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     param_type(H, Type, Options),
     atom_string(Name, NameS),
-    client_parameters(T, PathBindings, Params, Query, OptT, Check0, Options),
-    mkconj(Check0, true, Check).
-client_parameters([H|T], PathBindings, [P0|Ps], Query, Opt, Check, Options) :-
+    client_parameters(T, PathBindings, Params, HdrParams, Query, OptT, Check, Options).
+client_parameters([H|T], PathBindings,
+                  Params, [hparam(Name,_,Type,optional)|HdrParams], Query, Optional,
+                  Check, Options) :-
+    _{name:NameS, in:"header"} :< H,
+    !,
+    param_type(H, Type, Options),
+    atom_string(Name, NameS),
+    client_parameters(T, PathBindings, Params, HdrParams, Query, Optional, Check, Options).
+client_parameters([H|T], PathBindings, [P0|Ps], HdrParams, Query, Opt, Check, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
@@ -701,13 +737,12 @@ client_parameters([H|T], PathBindings, [P0|Ps], Query, Opt, Check, Options) :-
         error(openapi(missing_path_parameter(Method, Name, Path)), Options),
         fail
     ),
-    client_parameters(T, PathBindings, Ps, Query, Opt, Check0, Options),
+    client_parameters(T, PathBindings, Ps, HdrParams, Query, Opt, Check0, Options),
     mkconj(Check0, Check1, Check).
-client_parameters([H|T], PathBindings, Params, Query, Opt, Check, Options) :-
+client_parameters([H|T], PathBindings, Params, HdrParams, Query, Opt, Check, Options) :-
     deref(H, Param, Options),
     !,
-    client_parameters([Param|T], PathBindings, Params, Query, Opt, Check, Options).
-
+    client_parameters([Param|T], PathBindings, Params, HdrParams, Query, Opt, Check, Options).
 
 param_optional(Spec, Optional) :-
     (   Spec.get(required) == false
@@ -814,10 +849,16 @@ security_scheme(SchemeName, Dict, _, public, Options) :-
 		 *******************************/
 
 :- public
-    assemble_query/7,
+    assemble_query/9,
     assemble_content/7.
 
-assemble_query(Module, Method, Path, QParams, QOptional, QOptions, URL) :-
+%!  assemble_query(+Module, +Method, +Path, +HeaderParams, +QParams,
+%!                 +QOptional, +QOptions, -URL, -OpenOptions) is det.
+%
+%   @arg QOptions is the option list of the client predicate.
+
+assemble_query(Module, Method, Path, HeaderParams, QParams, QOptional, QOptions,
+               URL, OpenOptions) :-
     call(Module:openapi_server(ServerBase)),
     convlist(client_query_param, QParams, QueryFromArgs),
     optional_query_params(QOptional, QOptions, QueryFromOptions),
@@ -828,7 +869,8 @@ assemble_query(Module, Method, Path, QParams, QOptional, QOptions, URL) :-
     ;   phrase(array_query(Query), ArrayQuery),
         uri_query_components(QueryString, ArrayQuery),
         atomics_to_string([ServerBase, Path, "?", QueryString], URL)
-    ).
+    ),
+    convlist(client_header_param(QOptions), HeaderParams, OpenOptions).
 
 assemble_content(Module, Method, Path, Format, Schema, In, Content) :-
     (   Schema == (-)
@@ -910,6 +952,28 @@ optional_query_params([qparam(Name, PlValue, Type, optional)|T0], Options, Q) :-
     optional_query_params(T0, Options, QT).
 optional_query_params([_|T0], Options, Q) :-
     optional_query_params(T0, Options, Q).
+
+%!  client_header_param(+QOptions, +HeaderParam, -Header) is semidet.
+%
+%
+
+client_header_param(_QOptions, hparam(Name, PlValue, Type, _Required),
+                    request_header(Name=Value)) :-
+    nonvar(PlValue),
+    !,
+    (   Type == any
+    ->  Value = PlValue
+    ;   json_check(Type, Value, PlValue)
+    ).
+client_header_param(QOptions, hparam(Name, _PlValue, Type, _Required),
+                    request_header(Name=Value)) :-
+    Opt =.. [Name,PlValue],
+    option(Opt, QOptions),
+    !,
+    json_check(Type, Value, PlValue).
+client_header_param(_QOptions, hparam(Name, _PlValue, _Type, required),
+                    _) :-
+    existence_error(openapi_option, Name).
 
 %!  segment_value(+Type, ?Segment, ?Prolog) is det.
 %
@@ -1022,13 +1086,13 @@ openapi_dispatch(M:Request) :-
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
     M:openapi_handler(Method, Path, Segments,
-                      Required, AsOption, OptionParam, Content,
+                      Required, HdrParams, AsOption, OptionParam, Content,
                       Responses, _Security,
                       Handler),
     !,
     (   catch(openapi_run(M:Request,
                           Segments,
-                          Required, AsOption, OptionParam, Content,
+                          Required, HdrParams, AsOption, OptionParam, Content,
                           Responses,
                           Handler),
               Error,
@@ -1039,11 +1103,12 @@ openapi_dispatch(M:Request) :-
 
 openapi_run(Module:Request,
             Segments,
-            Required, AsOption, OptionParam, Content,
+            Required, HdrParams, AsOption, OptionParam, Content,
             Responses,
             Handler) :-
     append(Required, AsOption, RequestParams),
     catch(( maplist(segment_parameter, Segments),
+            maplist(header_parameter(Request), HdrParams),
             http_parameters([method(get)|Request], RequestParams),
             request_body(Content, Request),
             server_handler_options(AsOption, OptionParam)
@@ -1103,6 +1168,20 @@ server_handler_options([H|T], Options) :-
         Opt =.. [Name,Value],
         Options = [Opt|OptT],
         server_handler_options(T, OptT)
+    ).
+
+%!  header_parameter(+Request, +HdrParam)
+%
+%   Extract a parameter through the header.
+%   @tbd Deal with name normalization?  Deal with optional and
+%   missing required values.
+
+header_parameter(Request, HdrParam) :-
+    HdrParam =.. [Name, Arg, _Opts],
+    Header =.. [Name,Arg],
+    (   memberchk(Header, Request)
+    ->  true
+    ;   print_message(warning, openapi(missing_header(HdrParam)))
     ).
 
 %!  request_body(+ContentSpec, +Request) is det.
@@ -1490,7 +1569,12 @@ name_value(Name - Value, Name, Value) :- !.
 name_value(Name = Value, Name, Value) :- !.
 name_value(Term, Name, Value) :- Term =.. [Name,Value].
 
-%!  obj_properties_in(+InPairs, +Spec, -OutPairs)
+%!  obj_properties_in(+InPairs, +Spec, -OutPairs) is det.
+%
+%   Type check the Name-Value pairs of an object against Spec. Spec is a
+%   list of p(Name,Type,Opts). Input that does  not appear in the schema
+%   is removed. If a Value is `null`   and the property is not required,
+%   this is accepted. Should we delete the property instead?
 
 obj_properties_in([], Spec, []) :-
     !,
@@ -1503,21 +1587,25 @@ obj_properties_in([NV|T0], PL, [NV|T]) :-
     N @< P,
     !,
     obj_properties_in(T0, PL, T).
-obj_properties_in([N-V0|T0], [p(N,Type,_Req)|PT], [N-V|T]) :-
+obj_properties_in([N-V0|T0], [p(N,Type,Opts)|PT], [N-V|T]) :-
     !,
-    json_check(Type, V0, V),
+    (   V0 == null,
+        memberchk(nullable, Opts)
+    ->  V = V0
+    ;   json_check(Type, V0, V)
+    ),
     obj_properties_in(T0, PT, T).
-obj_properties_in(T0, [p(N,_Type,Req)|PT], T) :-
-    (   Req == false
-    ->  obj_properties_in(T0, PT, T)
-    ;   existence_error(json_property, N)
+obj_properties_in(T0, [p(N,_Type,Opts)|PT], T) :-
+    (   memberchk(required, Opts)
+    ->  existence_error(json_property, N)
+    ;   obj_properties_in(T0, PT, T)
     ).
 
 check_missing([]).
-check_missing([p(N,_Type,Req)|T]) :-
-    (   Req == false
-    ->  check_missing(T)
-    ;   existence_error(json_property, N)
+check_missing([p(N,_Type,Opts)|T]) :-
+    (   memberchk(required, Opts)
+    ->  existence_error(json_property, N)
+    ;   check_missing(T)
     ).
 
 %!  obj_properties_out(+OutPairs, +Spec, -InPairs)
@@ -1576,7 +1664,8 @@ http:convert_parameter(openapi(Type), In, Out) :-
 %     - array(ItemType)
 %     - object(Properties)
 %       Properties is an ordered list of
-%       - p(Name, Type, Required)
+%       - p(Name, Type, Properties)
+%         where Properties is a list of required(Bool), nullable(Bool)
 %     - A type as defined by oas_type/3.
 %     - url(URL)
 %       Reference to another type.
@@ -1612,10 +1701,29 @@ schema_clause(Schema-Spec, Options) -->
     },
     [ openapi:json_schema(URL, Type) ].
 
+%!  json_type(+Spec, -Type, -TypeOpts, +Options) is det.
 %!  json_type(+Spec, -Type, +Options) is det.
 %
 %   True when Type  is  the  type   representation  for  the  JSON  type
 %   description Spec.
+
+json_type(Spec, Type, TypeOpts, Options) :-
+    _{'$ref':URLS} :< Spec,
+    !,
+    option(base_uri(Base), Options),
+    uri_normalized(URLS, Base, URL),
+    (   url_yaml(URL, Spec2)
+    ->  atom_string(NewBase, URL),
+        json_type(Spec2, Type, TypeOpts, [base_uri(NewBase)|Options])
+    ;   Type = url(URL),
+        TypeOpts = []
+    ).
+json_type(Spec, Type, TypeOpts, Options) :-
+    json_type(Spec, Type, Options),
+    (   Spec.get(nullable) == true
+    ->  TypeOpts = [nullable]
+    ;   TypeOpts = []
+    ).
 
 json_type(Spec, Type, _) :-
     _{type:TypeS, format:FormatS} :< Spec,
@@ -1683,12 +1791,12 @@ json_type(_Spec, _Type, _Options) :-
 opts_json_type(Options, Spec, Type) :-
     json_type(Spec, Type, Options).
 
-schema_property(Reqs, Options, Name-Spec, p(Name, Type, Req)) :-
+schema_property(Reqs, Options, Name-Spec, p(Name, Type, TypeOpts)) :-
     (   memberchk(Name, Reqs)
-    ->  Req = true
-    ;   Req = false
+    ->  TypeOpts = [ required | TypeOpts1 ]
+    ;   TypeOpts = TypeOpts1
     ),
-    json_type(Spec, Type, Options).
+    json_type(Spec, Type, TypeOpts1, Options).
 
 numeric_domain(Spec, Type0, Type1, Type) :-
     numeric_type(Type0),
@@ -1962,6 +2070,7 @@ camel([H|T]) -->
 
 camel_skip([]) --> [].
 camel_skip([0'_|T]) --> !, camel(T).
+camel_skip([0'-|T]) --> !, camel(T).
 camel_skip([H|T]) --> !, [H], camel_skip(T).
 
 %!  uncamel_case(+In:atom, -Out:atom)
@@ -2117,12 +2226,12 @@ doc_data(Clauses, OperationId,
          _{arguments:Params, doc:Doc, security:Security},
          Options) :-
     member(openapi_handler(_Method, _PathList, Segments,
-                           Request, AsOption, OptionParam,
+                           Request, HdrParams, AsOption, OptionParam,
                            Content, Responses, Security, Handler), Clauses),
     Handler =.. [OperationId|Args],
     (   memberchk(openapi_doc(OperationId, Doc), Clauses),
         maplist(doc_param(from(Segments,
-                               Request, AsOption, OptionParam,
+                               Request, HdrParams, AsOption, OptionParam,
                                Content, Responses), Options), Args, Params0),
         exclude(==(-), Params0, Params)
     ->  true
@@ -2130,7 +2239,7 @@ doc_data(Clauses, OperationId,
         fail
     ).
 
-doc_param(from(Segments, Request, AsOption, OptionParam,
+doc_param(from(Segments, Request, HdrParams, AsOption, OptionParam,
                Content, Responses), Options,
           Arg, Param) :-
     (   segment_param(Arg, Segments, Param)
@@ -2138,6 +2247,7 @@ doc_param(from(Segments, Request, AsOption, OptionParam,
     ;   OptionParam == Arg,
         option_param(AsOption, Param)
     ;   content_param(Arg, Content, Param)
+    ;   header_param(Arg, HdrParams, Param)
     ;   response_param(Arg, Responses, Param, Options)
     ;   start_debugger_fail
     ), !.
@@ -2184,6 +2294,13 @@ content_param(Arg,
               content(_MediaType, Scheme, Arg0, Description),
               p(request_body, Scheme, Description)) :-
     Arg == Arg0, !.
+
+header_param(Arg, HdrParams, Param) :-
+    member(HdrParam, HdrParams),
+    arg(1, HdrParam, Arg0),
+    Arg == Arg0,
+    !,
+    doc_request_param(HdrParam, Param).
 
 response_param(Arg, Responses, -, Options) :-
     is_reponse_arg(Arg, Responses),
