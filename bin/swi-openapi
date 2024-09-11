@@ -71,11 +71,13 @@ usage :-
     current_prolog_flag(os_argv, [_,Exe|_]),
     format(user_error, 'Usage: ~w [options] file ...~n', [Exe]),
     format(user_error, '
-  --client[=file]          Generate client
-  --no-type-check-results  Do not type check results
-  --module[=name]          Generate a module (client only)
-  --server[=file]          Generate server
-  --server_url=URL         Make client contact server at URL
-  --ui		           Include Swagger UI (implies --httpd)
-  --httpd                  Include REST HTTP server
+  --client[=file]              Generate client
+  --no-type-check-results      Do not type check results
+  --enum-case-sensitive=false  Match enum values case insensitive
+  --enum-case=lower            Map enum output to lower case
+  --module[=name]              Generate a module (client only)
+  --server[=file]              Generate server
+  --server_url=URL             Make client contact server at URL
+  --ui		               Include Swagger UI (implies --httpd)
+  --httpd                      Include REST HTTP server
 ', []).

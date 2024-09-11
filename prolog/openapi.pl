@@ -1508,13 +1508,19 @@ json_check(not(Type), In, Out) :-
         ;   type_error(not(Type), Out)
         )
     ).
-json_check(enum(Values), In, Out) :-
+json_check(enum(Values, CaseSensitive, Case), In, Out) :-
     !,
-    oas_type(string, In, Out),
-    (   memberchk(Out, Values)
+    oas_type(string, In, V0),
+    (   memberchk(V0, Values)
+    ->  Out0 = V0
+    ;   CaseSensitive == false,
+        downcase_atom(V0, VL),
+        member(Out0, Values),
+        downcase_atom(Out0, VL)
     ->  true
-    ;   domain_error(oneof(Values), Out)
-    ).
+    ;   domain_error(oneof(Values), V0)
+    ),
+    enum_case(Case, Out0, Out).
 json_check(numeric(Type, Domain), In, Out) :-
     !,
     oas_type(Type, In, Out),
@@ -1538,6 +1544,11 @@ number_in_domain(max(Max), Value) :-
     Value =< Max.
 number_in_domain(min(Min), Value) :-
     Value >= Min.
+
+enum_case(preserve, Out0, Out) => Out = Out0.
+enum_case(lower,    Out0, Out) => downcase_atom(Out0, Out).
+enum_case(upper,    Out0, Out) => upcase_atom(Out0, Out).
+
 
 %!  is_json_object(@Term) is semidet.
 %
@@ -1762,9 +1773,11 @@ json_type(Spec, not(Type), Options) :-
     _{not:NSpec} :< Spec,
     !,
     json_type(NSpec, Type, Options).
-json_type(Spec, enum(Values), _) :-
+json_type(Spec, enum(Values, CaseSensitive, Case), Options) :-
     _{type:"string", enum:ValuesS} :< Spec,
     !,
+    option(enum_case_sensitive(CaseSensitive), Options, true),
+    option(enum_case(Case), Options, preserve),
     maplist(atom_string, Values, ValuesS).
 json_type(Spec, Type, _) :-
     _{type:TypeS} :< Spec,
@@ -1942,6 +1955,11 @@ client_option(type_check_results(Mode), Options) :-
     option(type_check_results(Mode), Options).
 client_option(server_url(URL), Options) :-
     option(server_url(URL), Options).
+client_option(enum_case_sensitive(Bool), Options) :-
+    option(enum_case_sensitive(Bool), Options).
+client_option(enum_case(Case), Options) :-
+    option(enum_case(Case), Options),
+    must_be(oneof([lower,upper,preserve]), Case).
 
 server_header(Stream, File, Options) :-
     (   option(httpd(true), Options)
