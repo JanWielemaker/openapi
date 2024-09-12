@@ -39,7 +39,8 @@
             openapi_server/2,                   % +File, +Options
             openapi_client/2,                   % +File, +Options
 
-            openapi_doc/3                       % +File, +Mode, +Options
+            openapi_doc/3,                      % +File, +Mode, +Options
+            openapi_arg/4                       % :PredName, ?Index, ?Name, ?Type
           ]).
 :- use_module(library(apply)).
 :- use_module(library(apply_macros), []).
@@ -74,7 +75,8 @@ parameters as well as responses.
 */
 
 :- meta_predicate
-    openapi_dispatch(:).
+    openapi_dispatch(:),
+    openapi_arg(:, ?, ?, ?).
 
 %!  openapi_server(+File, +Options)
 %
@@ -2077,6 +2079,27 @@ server(Port) :-
                 ]).
 
 ', []).
+
+		 /*******************************
+		 *        INTROSPECTION		*
+		 *******************************/
+
+%!  openapi_arg(?PredicateName, ?Index, ?Name, ?Type) is nondet.
+%
+%   True when PredicateName's one-based Index-th argument is named
+%   Name and has type Type.
+%
+%   @arg Type is as defined by the first argument of json_check/3.
+
+openapi_arg(M:OperationId, ArgI, Arg, Type) :-
+    Clause = openapi_handler(_Method, _PathList, _SegmentMatches,
+                             _Request, _HdrParams, _AsOption, _OptionParam,
+                             _Content, _Responses, _Security, Handler),
+    M:Clause,
+    functor(Handler, OperationId, _),
+    clause_data(Clause, module(M), OperationId, Data, []),
+    nth1(ArgI, Data.arguments, p(Arg, Type, _Description)).
+
 
 		 /*******************************
 		 *   DOCUMENTATION GENERATION	*
