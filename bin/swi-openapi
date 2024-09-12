@@ -62,6 +62,10 @@ setup_debug(Options) :-
     ->  gtrace
     ;   true
     ),
+    (   option(trap(true), Options)
+    ->  gtrap(_)
+    ;   true
+    ),
     (   option(debug(true), Options)
     ->  debug
     ;   true
