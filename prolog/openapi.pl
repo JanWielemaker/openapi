@@ -2398,14 +2398,20 @@ format(Format, Args, List, Tail) :-
 %   Get  a  dict  that  contains   all    information   to  produce  the
 %   documentation.
 
-doc_data(Clauses, OperationId,
-         _{arguments:Params, doc:Doc, security:Security},
-         Options) :-
-    member(openapi_handler(_Method, _PathList, Segments,
-                           Request, HdrParams, AsOption, OptionParam,
-                           Content, Responses, Security, Handler), Clauses),
+doc_data(Clauses, OperationId, Data, Options) :-
+    member(Clause, Clauses),
+    clause_data(Clause, Clauses, OperationId, Data, Options).
+
+clause_data(Clause, Clauses, OperationId, Data, Options) :-
+    Clause = openapi_handler(_Method, _PathList, Segments,
+                             Request, HdrParams, AsOption, OptionParam,
+                             Content, Responses, Security, Handler),
+    Data = #{arguments:Params, doc:Doc, security:Security},
     Handler =.. [OperationId|Args],
-    (   memberchk(openapi_doc(OperationId, Doc), Clauses),
+    (   (   Clauses = module(M)
+        ->  M:openapi_doc(OperationId, Doc)
+        ;   memberchk(openapi_doc(OperationId, Doc), Clauses)
+        ),
         maplist(doc_param(from(Segments,
                                Request, HdrParams, AsOption, OptionParam,
                                Content, Responses), Options), Args, Params0),
