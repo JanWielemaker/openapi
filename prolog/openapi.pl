@@ -552,12 +552,15 @@ to_content_type(Type, _) :-
 %
 %     - openapi_server(URL)
 %       One or more clauses describing the location of the server
-%       as defined in the OpenAPI file.
+%       as defined in the OpenAPI file.  If the option
+%       server_url(ServerURL) is provided, this replaces the
+%       locations found in the OpenAPI file.
 %     - Clauses that call the REST methods.  The name is the
 %       `operationId` described in the Swagger file.  The arguments
 %       are defined by the parameters and response from the
-%       Swagger file.
-%     - Clauses that define the JSON schema types.
+%       OpenAPI specification.
+%     - openapi:json_schema(URL, Type)
+%       Clauses that define the JSON schema types.
 
 client_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
