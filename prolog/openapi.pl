@@ -60,6 +60,8 @@
 :- use_module(library(listing), [portray_clause/2]).
 :- use_module(library(pprint), [print_term/2]).
 :- use_module(library(http/http_open)).         % http_open/3 is called by
+:- use_module(library(pcre), [re_match/3]).
+
                                                 % generated code.
 
 /** <module> OpenAPI (Swagger) library
@@ -1566,6 +1568,9 @@ json_check(numeric(Type, Domain), In, Out) :-
 json_check(any, In, Out) :-
     !,
     In = Out.
+json_check(string(Restrictions), In, Out) :-
+    oas_type(string, In, Out),
+    maplist(check_string_restriction(In), Restrictions).
 json_check(Type, In, Out) :-
     oas_type(Type, In, Out).
 
@@ -1584,6 +1589,17 @@ enum_case(preserve, Out0, Out) => Out = Out0.
 enum_case(lower,    Out0, Out) => downcase_atom(Out0, Out).
 enum_case(upper,    Out0, Out) => upcase_atom(Out0, Out).
 
+check_string_restriction(String, max_length(MaxLen)) =>
+    string_length(String, Len),
+    (   Len =< MaxLen
+    ->  true
+    ;   domain_error(string(maxLength=<MaxLen), String)
+    ).
+check_string_restriction(String, pattern(Pattern)) =>
+    re_match(Pattern, String,
+             [ anchored(true),
+               endanchored(true)
+             ]).
 
 %!  is_json_object(@Term) is semidet.
 %
@@ -1750,10 +1766,13 @@ schema_clause(Schema-Spec, Options) -->
     [ openapi:json_schema(URL, Type) ].
 
 %!  json_type(+Spec, -Type, -TypeOpts, +Options) is det.
-%!  json_type(+Spec, -Type, +Options) is det.
 %
 %   True when Type  is  the  type   representation  for  the  JSON  type
 %   description Spec.
+%
+%   @arg Spec is an OpenAPI type specification as JSON or YAML term.
+%   @arg Type is a term that is handled by json_check/3.
+%   @arg TypeOpts is a list that may hold `nullable` or `required`.
 
 json_type(Spec, Type, TypeOpts, Options) :-
     _{'$ref':URLS} :< Spec,
@@ -1773,13 +1792,15 @@ json_type(Spec, Type, TypeOpts, Options) :-
     ;   TypeOpts = []
     ).
 
+%!  json_type(+Spec, -Type, +Options) is det.
+
 json_type(Spec, Type, _) :-
     _{type:TypeS, format:FormatS} :< Spec,
     !,
     atom_string(Type0, TypeS),
     atom_string(Format, FormatS),
     api_type(Type0, Format, Type1),
-    numeric_domain(Spec, Type0, Type1, Type).
+    type_restrictions(Spec, Type0, Type1, Type).
 json_type(Spec, object(Props), Options) :-
     _{properties:PropSpecs} :< Spec,
     !,
@@ -1824,7 +1845,7 @@ json_type(Spec, Type, _) :-
     !,
     atom_string(Type0, TypeS),
     api_type(Type0, -, Type1),
-    numeric_domain(Spec, Type0, Type1, Type).
+    type_restrictions(Spec, Type0, Type1, Type).
 json_type(Spec, Type, Options) :-
     _{'$ref':URLS} :< Spec,
     !,
@@ -1851,7 +1872,9 @@ schema_property(Reqs, Options, Name-Spec, p(Name, Type, TypeOpts)) :-
     ),
     json_type(Spec, Type, TypeOpts1, Options).
 
-numeric_domain(Spec, Type0, Type1, Type) :-
+%!  type_restrictions(+Spec, +Type0, +ApiType, -Type)
+
+type_restrictions(Spec, Type0, Type1, Type) :-
     numeric_type(Type0),
     !,
     (   _{minimum:Min, maximum:Max} :< Spec
@@ -1862,10 +1885,19 @@ numeric_domain(Spec, Type0, Type1, Type) :-
     ->  Type = numeric(Type1, max(Max))
     ;   Type = Type1
     ).
-numeric_domain(_, _Type0, Type, Type).
+type_restrictions(Spec, string, string, Type) :-
+    setof(Restrict, string_restriction(Spec, Restrict), Restrictions),
+    !,
+    Type = string(Restrictions).
+type_restrictions(_, _Type0, Type, Type).
 
 numeric_type(integer).
 numeric_type(number).
+
+string_restriction(Spec, max_length(Len)) :-
+    Len = Spec.get(maxLength).
+string_restriction(Spec, pattern(Regex)) :-
+    Regex = Spec.get(pattern).
 
 %!  url_yaml(+URL, -Yaml:json) is semidet.
 %
