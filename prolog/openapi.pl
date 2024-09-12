@@ -1781,15 +1781,15 @@ json_type(Spec, Type, _) :-
     api_type(Type0, Format, Type1),
     numeric_domain(Spec, Type0, Type1, Type).
 json_type(Spec, object(Props), Options) :-
-    _{required:ReqS, properties:PropSpecs} :< Spec,
+    _{properties:PropSpecs} :< Spec,
     !,
     dict_pairs(PropSpecs, _, Pairs),
-    maplist(atom_string, Req, ReqS),
+    (   maplist(atom_string, Req, Spec.get(required))
+    ->  true
+    ;   Req = []
+    ),
     maplist(schema_property(Req, Options), Pairs, Props0),
     sort(Props0, Props).
-json_type(Spec, object, _Options) :-
-    _{type:"object"} :< Spec,
-    !.
 json_type(Spec, array(Type), Options) :-
     _{type:"array", items:IType} :< Spec,
     !,
@@ -1810,6 +1810,9 @@ json_type(Spec, not(Type), Options) :-
     _{not:NSpec} :< Spec,
     !,
     json_type(NSpec, Type, Options).
+json_type(Spec, object, _Options) :-
+    _{type:"object"} :< Spec,
+    !.
 json_type(Spec, enum(Values, CaseSensitive, Case), Options) :-
     _{type:"string", enum:ValuesS} :< Spec,
     !,
