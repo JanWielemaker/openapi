@@ -1597,10 +1597,7 @@ check_string_restriction(String, max_length(MaxLen)) =>
     ;   domain_error(string(maxLength=<MaxLen), String)
     ).
 check_string_restriction(String, pattern(Pattern)) =>
-    re_match(Pattern, String,
-             [ anchored(true),
-               endanchored(true)
-             ]).
+    re_match(Pattern, String, []).
 
 %!  is_json_object(@Term) is semidet.
 %
@@ -1898,7 +1895,7 @@ numeric_type(number).
 string_restriction(Spec, max_length(Len)) :-
     Len = Spec.get(maxLength).
 string_restriction(Spec, pattern(Regex)) :-
-    Regex = Spec.get(pattern).
+    atom_string(Regex, Spec.get(pattern)).
 
 %!  url_yaml(+URL, -Yaml:json) is semidet.
 %
