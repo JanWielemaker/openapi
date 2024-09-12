@@ -114,7 +114,10 @@ openapi_client(File, Options) :-
 %   specification as this allows us to use  the same code for generating
 %   the documentation.
 
-expand_openapi_client(File, Options, Clauses) :-
+expand_openapi_client(File, Options, AllClauses) :-
+    AllClauses = [ (:- discontiguous(openapi_type/1))
+                 | Clauses
+                 ],
     read_openapi_spec(File, Spec, Options, Options1),
     phrase(client_clauses(Spec, Options1), Clauses).
 
@@ -447,19 +450,19 @@ match_path_list([V,H|T], Path) :-
     !.
 
 %! content_parameter(+Method, +Spec, -Content,
-%!                   +Params0, -Params, +Options) is det.
+%!                   +ArgAndTypes0, -ArgAndTypes, +Options) is det.
 %
 %  If there is a request body, add it to the parameter list and return a
 %  specification for openapi_dispatch/1 in Content.
 
 content_parameter(Method, Spec, content(MediaType, Schema, Var, Descr),
-                  Params, AllParams, Options) :-
+                  Args, AllArgs, Options) :-
     has_content(Method),
     !,
     request_content_type(Spec, MediaType, Schema, Options),
     content_description(Spec, Descr),
-    append(Params, [Var], AllParams).
-content_parameter(_, _, -, Params, Params, _).
+    append(Args, [a(Var,'RequestBody',Schema)], AllArgs).
+content_parameter(_, _, -, Args, Args, _).
 
 has_content(post).
 has_content(put).
@@ -603,16 +606,16 @@ client_path_clause(Path-Spec, Options) -->
 
 client_handlers([], _, _) --> [].
 client_handlers([H|T], Path, Options) -->
-    { client_handler(H, Path, Clause, Options) },
-    [Clause],
+    { client_handler(H, Path, Clause, TypeClause, Options) },
+    [Clause, TypeClause],
     client_handlers(T, Path, Options).
 
-client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
+client_handler(Method-Spec, PathSpec, (Head :- Body), openapi_type(TypeHead), Options) :-
     path_vars(PathSpec, PathList, PathBindings),
     handler_predicate(Method, PathSpec, Spec, PredName, Options),
     (   spec_parameters(Spec, ParamSpecs, Options)
     ->  client_parameters(ParamSpecs, PathBindings,
-                          Args, HdrParams, Query, Optional,
+                          ArgAndTypes, HdrParams, Query, Optional,
                           CheckParams,
                           [ path(PathSpec),
                             method(Method)
@@ -623,7 +626,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
         ;   ClientOptionArgs = [ClientOptions]
         )
     ;   PathBindings == []
-    ->  Args = [],
+    ->  ArgAndTypes = [],
         Query = [],
         CheckParams = true,
         Optional = [],
@@ -633,7 +636,10 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
               Options),
         fail
     ),
-    content_parameter(Method, Spec, Content, Args, Args1, Options),
+    content_parameter(Method, Spec, Content, ArgAndTypes, ArgAndTypes1, Options),
+    maplist(arg(1), ArgAndTypes1, Args),
+    maplist(client_arg, ArgAndTypes1, ClientArgs),
+    TypeHead =.. [PredName|ClientArgs],
     request_body(Method, PathSpec, Module, Content, ContentGoal, RequestOptions),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
@@ -641,7 +647,7 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
     ->  ResultArgs = [Result]
     ;   ResultArgs = []
     ),
-    append([ Args1,
+    append([ Args,
              ResultArgs,
              ClientOptionArgs
            ], AllArgs),
@@ -676,6 +682,10 @@ client_handler(Method-Spec, PathSpec, (Head :- Body), Options) :-
                                             In, Result),
                  close(In))
            ).
+
+:- det(client_arg/2).
+client_arg(a(_, Name, Type), ArgName:Type) :-
+    camel_case(Name, ArgName).
 
 %!  handler_predicate(+Method, +Path, +Spec, -PredicateName, +Options) is det.
 %
@@ -714,14 +724,12 @@ code_has_no_data(Code) :-
     var(Code).                                  % errors
 code_has_no_data(204).                          % No content
 
-header_arg(request_header(_Name=Value), Value).
-
 %!  client_parameters(+Spec, +PathBindings,
-%!                    -Params, -HdrParams, -Required, -Optional,
+%!                    -ArgsAndTypes, -HdrParams, -Required, -Optional,
 %!                    -Check:callable, +Options)
 %
-%   @arg Params is a list of variables for required arguments of the
-%   client predicate.
+%   @arg Args is a list of pairs a(Var,Name,Type) for required arguments
+%   of the client predicate.
 %   @arg Required is a list of qparam(Name,P0,Type,Opt) used for
 %   adding query parameters for required parameters to the URL
 %   @arg Optional is a list of qparam(Name,P0,Type,optional) used for
@@ -729,7 +737,7 @@ header_arg(request_header(_Name=Value), Value).
 %   @arg Check is a callable term for validating the arguments,
 
 client_parameters([], _, [], [], [], [], true, _).
-client_parameters([H|T], PathBindings, [A0|Args], HdrParams,
+client_parameters([H|T], PathBindings, [a(A0,Name,Type)|Args], HdrParams,
                   [qparam(Name,A0,Type,Opt)|Qs], Optional, Check, Options) :-
     _{name:NameS, in:"query"} :< H,
     param_optional(H, Opt),
@@ -740,7 +748,8 @@ client_parameters([H|T], PathBindings, [A0|Args], HdrParams,
     param_type(H, Type, Options),
     atom_string(Name, NameS),
     client_parameters(T, PathBindings, Args, HdrParams, Qs, Optional, Check, Options).
-client_parameters([H|T], PathBindings, [A0|Args], [hparam(Name,A0,Type,Opt)|HdrParams],
+client_parameters([H|T], PathBindings, [a(A0,Name,Type)|Args],
+                  [hparam(Name,A0,Type,Opt)|HdrParams],
                   Query, Optional, Check, Options) :-
     _{name:NameS, in:"header"} :< H,
     param_optional(H, Opt),
@@ -758,33 +767,39 @@ client_parameters([H|T], PathBindings,
     !,
     param_type(H, Type, Options),
     atom_string(Name, NameS),
-    client_parameters(T, PathBindings, Params, HdrParams, Query, OptT, Check, Options).
-client_parameters([H|T], PathBindings,
-                  Params, [hparam(Name,_,Type,optional)|HdrParams], Query, Optional,
+    client_parameters(T, PathBindings, Params, HdrParams,
+                      Query, OptT, Check, Options).
+client_parameters([H|T], PathBindings, Args,
+                  [hparam(Name,_,Type,optional)|HdrParams], Query, Optional,
                   Check, Options) :-
     _{name:NameS, in:"header"} :< H,
     !,
     param_type(H, Type, Options),
     atom_string(Name, NameS),
-    client_parameters(T, PathBindings, Params, HdrParams, Query, Optional, Check, Options).
-client_parameters([H|T], PathBindings, [P0|Ps], HdrParams, Query, Opt, Check, Options) :-
+    client_parameters(T, PathBindings, Args, HdrParams,
+                      Query, Optional, Check, Options).
+client_parameters([H|T], PathBindings, [a(A0,Name,Type)|Args],
+                  HdrParams, Query, Opt, Check, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
     param_type(H, Type, Options),
     (   memberchk(Name=Segment, PathBindings)
-    ->  Check1 = openapi:segment_value(Type, Segment, P0)
+    ->  Check1 = openapi:segment_value(Type, Segment, A0)
     ;   option(path(Path), Options),
         option(method(Method), Options),
         error(openapi(missing_path_parameter(Method, Name, Path)), Options),
         fail
     ),
-    client_parameters(T, PathBindings, Ps, HdrParams, Query, Opt, Check0, Options),
+    client_parameters(T, PathBindings, Args, HdrParams,
+                      Query, Opt, Check0, Options),
     mkconj(Check0, Check1, Check).
-client_parameters([H|T], PathBindings, Params, HdrParams, Query, Opt, Check, Options) :-
+client_parameters([H|T], PathBindings, Args, HdrParams,
+                  Query, Opt, Check, Options) :-
     deref(H, Param, Options),
     !,
-    client_parameters([Param|T], PathBindings, Params, HdrParams, Query, Opt, Check, Options).
+    client_parameters([Param|T], PathBindings, Args, HdrParams,
+                      Query, Opt, Check, Options).
 
 param_optional(Spec, Optional) :-
     (   Spec.get(required) == false
@@ -2094,14 +2109,21 @@ server(Port) :-
 %
 %   @arg Type is as defined by the first argument of json_check/3.
 
+% Server clauses
 openapi_arg(M:OperationId, ArgI, Arg, Type) :-
     Clause = openapi_handler(_Method, _PathList, _SegmentMatches,
                              _Request, _HdrParams, _AsOption, _OptionParam,
                              _Content, _Responses, _Security, Handler),
-    M:Clause,
+    clause(M:Clause, true),
     functor(Handler, OperationId, _),
     clause_data(Clause, module(M), OperationId, Data, []),
     nth1(ArgI, Data.arguments, p(Arg, Type, _Description)).
+% client clauses
+openapi_arg(M:OperationId, ArgI, Arg, Type) :-
+    Clause = openapi_type(Head),
+    clause(M:Clause, true),
+    functor(Head, OperationId, _),
+    arg(ArgI, Head, Arg:Type).
 
 
 		 /*******************************
