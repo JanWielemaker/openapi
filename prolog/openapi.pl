@@ -61,6 +61,7 @@
 :- use_module(library(pprint), [print_term/2]).
 :- use_module(library(http/http_open)).         % http_open/3 is called by
 :- use_module(library(pcre), [re_match/3]).
+:- use_module(library(dcg/high_order), [sequence/5]).
 
                                                 % generated code.
 
@@ -2080,6 +2081,13 @@ server(Port) :-
 
 ', []).
 
+		 /*******************************
+		 *   DOCUMENTATION GENERATION	*
+		 *******************************/
+
+:- meta_predicate
+    prefix(+, //, -, ?, ?).
+
 %!  openapi_doc(+OperationID, +Data, +Options)// is det.
 
 openapi_doc(OperationId, Data, Options) -->
@@ -2271,7 +2279,9 @@ doc_args([]) --> [].
 doc_args([H|T]) --> doc_arg(H), doc_args(T).
 
 doc_arg(p(Name, Type, Description)) -->
-    "%  @arg ", camel_case(Name), " ", type(Type), "\n",
+    indent(0),
+    prefix(0, ("@arg ", camel_case(Name), " "), Indent),
+    type(Type, Indent), "\n",
     arg_description(Description).
 
 doc_path(Doc) -->
@@ -2296,16 +2306,95 @@ arg_option(p(Name, Type, Description)) -->
     "%       - ", quoted_atom(Name), "(+", type(Type), ")", "\n",
     lines(Lines, "%         ").
 
+%!  type(+Type)//
+
 type(list(option)) --> !.
 type(url(URL)) -->
     !,
     { file_base_name(URL, TypeName) },
     atom(TypeName).
-type(array(Type)) --> !,
-    "array(", type(Type), ")".
-type(Type, List, Tail) :-
+type(Type) -->
+    type(Type, 0).
+
+type(array(Type), Indent) -->
+    !,
+    prefix(Indent, "array(", NewIndent),
+    type(Type, NewIndent), ")".
+type(string([pattern(Pattern)]), _Indent) -->
+    !,
+    "/", atom(Pattern), "/".
+type(string(Attrs), _Indent) -->
+    { select(pattern(Pattern), Attrs, Attrs1) },
+    !,
+    "/", atom(Pattern), "/ [", sequence(str_attr, ",", Attrs1), "]".
+type(string(Attrs), _Indent) -->
+    !,
+    "string [", sequence(str_attr, ",", Attrs), "]".
+type(enum(List,_,lower), _Indent) -->
+    { maplist(downcase_atom, List, Lower) },
+    sequence(atom, "|", Lower).
+type(object(Properties), Indent) -->
+    !,
+    prefix(Indent, "{ ", NewIndent),
+    sequence(obj_property(NewIndent), (",", nl(NewIndent)), Properties),
+    nl(Indent), "}".
+type(oneOf(List), Indent) -->
+    !,
+    prefix(Indent, "( ", NewIndent),
+    sequence(itype(NewIndent), (nl(Indent),"| "), List),
+    nl(Indent), ")".
+type(Type, _Indent, List, Tail) :-
     format(codes(List, Tail), '~p', [Type]).
 
+itype(Indent, Type) -->
+    type(Type, Indent).
+
+obj_property(Indent, p(Name, Type, Opts)) -->
+    atom(Name), ": ",
+    { atom_length(Name, NameL),
+      NewIndent is Indent+NameL+2
+    },
+    type(Type, NewIndent),
+    obj_property_attrs(Opts).
+
+obj_property_attrs([]) -->
+    !.
+obj_property_attrs(Opts) -->
+    " [", sequence(obj_property_attr, "",Opts), "]".
+
+obj_property_attr(required) --> "R".
+obj_property_attr(nullable) --> "N".
+
+str_attr(max_length(Len)) --> format("=<~w", [Len]).
+
+prefix(Indent, Prefix, NewIndent) -->
+    here(Start),
+    Prefix,
+    here(End),
+    { diff_len(Start, End, 0, PLen),
+      NewIndent is Indent+PLen
+    }.
+
+diff_len(Here, End, Len, Len) :-
+    Here == End,
+    !.
+diff_len([_|Here], End, Len0, Len) :-
+    Len1 is Len0+1,
+    diff_len(Here, End, Len1, Len).
+
+here(List,List,List).
+
+nl(Indent) -->
+    "\n", indent(Indent).
+
+indent(Indent) -->
+    "%  ", spaces(Indent).
+
+spaces(Indent) -->
+    format('~t~*|', [Indent]).
+
+format(Format, Args, List, Tail) :-
+    format(codes(List, Tail), Format, Args).
 
 %!  doc_data(:ServerClauses, -OperationID, -Data:dict, +Options) is nondet.
 %
