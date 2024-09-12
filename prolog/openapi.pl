@@ -224,6 +224,7 @@ path_handler(Path, Method, Spec,
     ;   PathBindings == []
     ->  SegmentMatches = [],
         Params = [],
+        HdrParams = [],
         Request = [],
         AsOption = [],
         OptionParams = []
@@ -387,6 +388,14 @@ path_doc(_, _) --> [].
 
 
 %!  path_vars(+PathSpec, -Segments, -Bindings) is det.
+%
+%   Convert a path specification holding {Name} into a list of Segments,
+%   where each Segment is an atom or a   variable. Bindings is a list of
+%   `Name=Var`, e.g.
+%
+%       ?- path_vars('/aap/{noot}/mies', Segs, B).
+%       Segs = ['/aap/', _A, '/mies'],
+%       B = [noot=_A].
 
 path_vars(PathSpec, Segments, Bindings) :-
     string_codes(PathSpec, Codes),
@@ -406,6 +415,31 @@ path_vars(Segments, []) -->
     ;   atom_codes(Segment, Codes),
         Segments = [Segment]
     }.
+
+%!  match_path_list(+PathList, +Path) is semidet.
+%
+%   Where PathList is a list of atoms and variables and Path is an atom.
+%   Bind the variables such that the   concatenation of PathList results
+%   in Path. Each variable is bound to a string.
+
+match_path_list([], "").
+match_path_list([Path], Path) :-
+    !.
+match_path_list([Atom], String) :-
+    !,
+    atom_string(Atom, String).
+match_path_list([H|T], Path) :-
+    nonvar(H),
+    !,
+    string_concat(H, Rest, Path),
+    match_path_list(T, Rest).
+match_path_list([V,H|T], Path) :-
+    assertion(nonvar(H)),
+    sub_string(Path, B, _, A, H),
+    sub_string(Path, 0, B, _, V),
+    sub_string(Path, _, A, 0, Rest),
+    match_path_list(T, Rest),
+    !.
 
 %! content_parameter(+Method, +Spec, -Content,
 %!                   +Params0, -Params, +Options) is det.
@@ -1085,10 +1119,11 @@ openapi_dispatch(M:Request) :-
     memberchk(method(Method), Request),
     M:openapi_root(Root),
     atom_concat(Root, Path, FullPath),
-    M:openapi_handler(Method, Path, Segments,
+    M:openapi_handler(Method, PathList, Segments,
                       Required, HdrParams, AsOption, OptionParam, Content,
                       Responses, _Security,
                       Handler),
+    match_path_list(PathList, Path),
     !,
     (   catch(openapi_run(M:Request,
                           Segments,
