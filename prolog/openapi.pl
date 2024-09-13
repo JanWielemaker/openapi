@@ -1719,14 +1719,14 @@ obj_properties_out([NV|T0], PL, [NV|T]) :-
     N @< P,
     !,
     obj_properties_out(T0, PL, T).
-obj_properties_out([N-V0|T0], [p(N,Type,_Req)|PT], [N-V|T]) :-
+obj_properties_out([N-V0|T0], [p(N,Type,_Opts)|PT], [N-V|T]) :-
     !,
     json_check(Type, V, V0),
     obj_properties_out(T0, PT, T).
-obj_properties_out(T0, [p(N,_Type,Req)|PT], T) :-
-    (   Req == false
-    ->  obj_properties_out(T0, PT, T)
-    ;   existence_error(json_property, N)
+obj_properties_out(T0, [p(N,_Type,Opts)|PT], T) :-
+    (   memberchk(required, Opts)
+    ->  existence_error(json_property, N)
+    ;   obj_properties_out(T0, PT, T)
     ).
 
 %!  join_dicts(+Dicts, -Dict) is det.
