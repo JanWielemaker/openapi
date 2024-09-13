@@ -1531,21 +1531,25 @@ json_check(array(Type), In, Out) :-
     ).
 json_check(oneOf(Types), In, Out) :-
     !,
+    Error = error(_,_),
     (   nonvar(In)
-    ->  append(_, [Type|Rest], Types),
-        catch(json_check(Type, In, Out), _, fail),
-        (   member(T2, Rest),
-            catch(json_check(T2, In, _), _, fail)
-        ->  type_error(oneOf(Types), In)
-        ;   true
+    ->  (   append(_, [Type|Rest], Types),
+            catch(json_check(Type, In, Out), Error, fail)
+        ->  (   member(T2, Rest),
+                catch(json_check(T2, In, _), Error, fail)
+            ->  type_error(oneOf(Types), In)
+            ;   true
+            )
+        ;   type_error(oneOf(Types), Out)
         )
     ;   append(_, [Type|Rest], Types),
-        catch(json_check(Type, In, Out), _, fail),
-        (   member(T2, Rest),
-            catch(json_check(T2, _, Out), _, fail)
+        catch(json_check(Type, In, Out), Error, fail)
+    ->  (   member(T2, Rest),
+            catch(json_check(T2, _, Out), Error, fail)
         ->  type_error(oneOf(Types), Out)
         ;   true
         )
+    ;   type_error(oneOf(Types), In)
     ).
 json_check(allOf(Types), In, Out) :-
     !,
