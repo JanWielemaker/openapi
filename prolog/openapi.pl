@@ -1574,18 +1574,14 @@ json_check(not(Type), In, Out) :-
         )
     ).
 json_check(enum(Values, CaseSensitive, Case), In, Out) :-
+    Enum = enum(Values, CaseSensitive, Case),
     !,
-    oas_type(string, In, V0),
-    (   memberchk(V0, Values)
-    ->  Out0 = V0
-    ;   CaseSensitive == false,
-        downcase_atom(V0, VL),
-        member(Out0, Values),
-        downcase_atom(Out0, VL)
-    ->  true
-    ;   domain_error(oneof(Values), V0)
-    ),
-    enum_case(Case, Out0, Out).
+    (   var(In)                                    % Out -> In
+    ->  enum_find(Out, Enum, Value),
+        to_string(Value, In)
+    ;   enum_find(In, Enum, Value),
+        enum_case(Case, Value, Out)
+    ).
 json_check(numeric(Type, Domain), In, Out) :-
     !,
     oas_type(Type, In, Out),
@@ -1597,6 +1593,7 @@ json_check(any, In, Out) :-
     !,
     In = Out.
 json_check(string(Restrictions), In, Out) :-
+    !,
     oas_type(string, In, Out),
     maplist(check_string_restriction(In), Restrictions).
 json_check(Type, In, Out) :-
@@ -1612,6 +1609,18 @@ number_in_domain(max(Max), Value) :-
     Value =< Max.
 number_in_domain(min(Min), Value) :-
     Value >= Min.
+
+enum_find(From, enum(Values, CaseSensitive, _Case), Value) :-
+    to_atom(From, V0),
+    (   memberchk(V0, Values)
+    ->  Value = V0
+    ;   CaseSensitive == false,
+        downcase_atom(V0, VL),
+        member(V1, Values),
+        downcase_atom(V1, VL)
+    ->  Value = V1
+    ;   domain_error(oneof(Values), From)
+    ).
 
 enum_case(preserve, Out0, Out) => Out = Out0.
 enum_case(lower,    Out0, Out) => downcase_atom(Out0, Out).
