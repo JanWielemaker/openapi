@@ -1396,6 +1396,9 @@ api_type(uri,      string,     uri,         uri).  % Not in OAS
 api_type(uuid,     string,     uuid,        uuid). % Not in OAS
 
 %!  oas_type(+Type, ?In, ?Out) is det.
+%
+%   @arg Out is the _Prolog_ view
+%   @arg In is the JSON dict view.
 
 oas_type(int32, In, Out) :-
     cvt_integer(In, Out),
@@ -1442,14 +1445,40 @@ oas_type(boolean, In, Out) :-
     ;   to_boolean(In, Out)
     ).
 oas_type(date, In, Out) :-
-    xsd_time_string(Out, 'http://www.w3.org/2001/XMLSchema#date', In).
+    cvt_date_time(date, In, Out).
 oas_type(date_time, In, Out) :-
-    xsd_time_string(Out, 'http://www.w3.org/2001/XMLSchema#dateTime', In).
+    cvt_date_time(date_time, In, Out).
 oas_type(password, In, Out) :-
     (   var(In)
     ->  to_string(Out, In)
     ;   to_string(In, Out)
     ).
+
+cvt_date_time(Format, In, Out) :-
+    (   var(In)
+    ->  (   (   atom(Out)
+            ->  to_string(Out, In)
+            ;   string(Out)
+            ->  In = Out
+            )
+        ->  valid_date_time(Format, In, _)
+        ;   compound(Out)
+        ->  valid_date_time(Format, In, Out)
+        ;   number(Out)
+        ->  stamp_date_time(Out, Date, 'UTC'),
+            valid_date_time(Format, In, Date)
+        )
+    ;   valid_date_time(Format, In, Out) % creating a date/6 struct
+    ).
+
+valid_date_time(date, String, Date) :-
+    xsd_time_string(Date,  % date(Y,M,D)
+                    'http://www.w3.org/2001/XMLSchema#date',
+                    String).
+valid_date_time(date_time, String, DateTime) :-
+    xsd_time_string(DateTime,  % date_time(Y,M,D,H,Mi,S[,TZ])
+                    'http://www.w3.org/2001/XMLSchema#dateTime',
+                    String).
 
 cvt_integer(In, Out) :-
     cvt_number(In, Out),
