@@ -220,7 +220,7 @@ path_handler(Path, Method, Spec,
     path_vars(Path, PathList, PathBindings),
     (   spec_parameters(Spec, ParamSpecs, Options)
     ->  server_parameters(ParamSpecs, PathBindings, SegmentMatches,
-                          Request, AsOption, Params, HdrParams,
+                          Request, AsOption, TypeAndArgs0, HdrParams,
                           [ path(Path),
                             method(Method)
                           | Options
@@ -231,7 +231,7 @@ path_handler(Path, Method, Spec,
         )
     ;   PathBindings == []
     ->  SegmentMatches = [],
-        Params = [],
+        TypeAndArgs0 = [],
         HdrParams = [],
         Request = [],
         AsOption = [],
@@ -240,13 +240,14 @@ path_handler(Path, Method, Spec,
               Options),
         fail
     ),
-    content_parameter(Method, Spec, Content, Params, Params1, Options),
-    append(Params1, [Result|OptionParams], AllParams),
+    content_parameter(Method, Spec, Content, TypeAndArgs0, TypeAndArgs, Options),
+    maplist(arg(1), TypeAndArgs, Args),
+    append(Args, [Result|OptionParams], AllArgs),
     dict_pairs(Spec.responses, _, ResPairs),
     maplist(response(Result, Options), ResPairs, Responses),
     spec_security(Spec, Security, Options),
     handler_predicate(Method, Path, Spec, PredName, Options),
-    Handler =.. [PredName|AllParams].
+    Handler =.. [PredName|AllArgs].
 
 spec_parameters(Spec, Parameters, Options) :-
     option(parameters(Common), Options, []),
@@ -259,10 +260,13 @@ spec_parameters(Spec, Parameters, Options) :-
 
 %!  server_parameters(+ParamSpecs, +PathBindings,
 %!                    -SegmentMatches, -RequestParams, -RequestOptions,
-%!                    -HandlerParams, -HeaderOptions, +Options) is det.
+%!                    -HandlerArgs, -HeaderOptions, +Options) is det.
+%
+%   @arg HandlerArgs is a list of a(Var,Name,Type) for the positional
+%        input arguments of the server handler predicates.
 
 server_parameters([], _, [], [], [], [], [], _).
-server_parameters([H|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Options) :-
+server_parameters([H|T], PathB, Segs, Request, AsOption, Args, HdrOpts, Options) :-
     _{name:NameS, in:"query"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
@@ -271,13 +275,14 @@ server_parameters([H|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Option
     (   Opts = [optional(true)|_],
         \+ option(optional(unbound), Options)
     ->  AsOption = [R0|AsOpts],
-        server_parameters(T, PathB, Segs, Request, AsOpts, Params, HdrOpts, Options)
+        server_parameters(T, PathB, Segs, Request, AsOpts, Args, HdrOpts, Options)
     ;   Request = [R0|Req],
-        Params  = [P0|Ps],
-        server_parameters(T, PathB, Segs, Req, AsOption, Ps, HdrOpts, Options)
+        param_type(H, Type, Options),
+        Args  = [a(P0,Name,Type)|MoreArgs],
+        server_parameters(T, PathB, Segs, Req, AsOption, MoreArgs, HdrOpts, Options)
     ).
-server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
-                  Req, AsOption, [P0|Ps], HdrOpts, Options) :-
+server_parameters([H|T], PathB, [segment(Type, Seg, A0, Name, Descr)|Segs],
+                  Req, AsOption, [a(A0,Name,Type)|Args], HdrOpts, Options) :-
     _{name:NameS, in:"path"} :< H,
     !,
     atom_string(Name, NameS),
@@ -289,24 +294,25 @@ server_parameters([H|T], PathB, [segment(Type, Seg, P0, Name, Descr)|Segs],
         error(openapi(missing_path_parameter(Method, Name, Path)), Options),
         fail
     ),
-    server_parameters(T, PathB, Segs, Req, AsOption, Ps, HdrOpts, Options).
-server_parameters([H|T], PathB, Segs, Req, AsOption, Params, [R0|HdrOpts], Options) :-
+    server_parameters(T, PathB, Segs, Req, AsOption, Args, HdrOpts, Options).
+server_parameters([H|T], PathB, Segs, Req, AsOption, Args, [R0|HdrOpts], Options) :-
     _{name:NameS, in:"header"} :< H,
     !,
     phrase(http_param_options(H, Options), Opts),
     atom_string(Name, NameS),
-    R0 =.. [Name,P0,Opts],
+    R0 =.. [Name,A0,Opts],
     (   Opts = [optional(true)|_],
         \+ option(optional(unbound), Options)
     ->  AsOption = [R0|AsOpts],
-        server_parameters(T, PathB, Segs, Req, AsOpts, Params, HdrOpts, Options)
-    ;   Params  = [P0|Ps],
-        server_parameters(T, PathB, Segs, Req, AsOption, Ps, HdrOpts, Options)
+        server_parameters(T, PathB, Segs, Req, AsOpts, Args, HdrOpts, Options)
+    ;   param_type(H, Type, Options),
+        Args  = [a(A0,Name,Type)|MoreArgs],
+        server_parameters(T, PathB, Segs, Req, AsOption, MoreArgs, HdrOpts, Options)
     ).
-server_parameters([H|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Options) :-
+server_parameters([H|T], PathB, Segs, Request, AsOption, Args, HdrOpts, Options) :-
     deref(H, Param, Options),
     !,
-    server_parameters([Param|T], PathB, Segs, Request, AsOption, Params, HdrOpts, Options).
+    server_parameters([Param|T], PathB, Segs, Request, AsOption, Args, HdrOpts, Options).
 server_parameters([H|_], _PathB, _Segments, _Req, _AsOption, _, _HdrOpts, Options) :-
     error(openapi(parameter_failed(H)), Options),
     fail.
@@ -610,6 +616,7 @@ client_handlers([H|T], Path, Options) -->
     [Clause, TypeClause],
     client_handlers(T, Path, Options).
 
+:- det(client_handler/5).
 client_handler(Method-Spec, PathSpec, (Head :- Body), openapi_type(TypeHead), Options) :-
     path_vars(PathSpec, PathList, PathBindings),
     handler_predicate(Method, PathSpec, Spec, PredName, Options),
