@@ -1493,6 +1493,12 @@ oas_type(password, In, Out) :-
     ;   to_string(In, Out)
     ).
 
+%!  cvt_date_time(+Format, ?In, ?Out) is det.
+%
+%   Convert between wire (xsd) dateTime and   Prolog. As Prolog input we
+%   accept a term (date(Y,M,D)  or   date_time(Y,M,D,H,Mn,S,0)),  a time
+%   stamp or an xsd dateTime string.
+
 cvt_date_time(Format, In, Out) :-
     (   var(In)
     ->  (   (   atom(Out)
@@ -1504,8 +1510,11 @@ cvt_date_time(Format, In, Out) :-
         ;   compound(Out)
         ->  valid_date_time(Format, In, Out)
         ;   number(Out)
-        ->  stamp_date_time(Out, Date, 'UTC'),
-            valid_date_time(Format, In, Date)
+        ->  stamp_date_time(Out, date(Y,M,D,H,Mn,S,0,_Tz,_Dst), 'UTC'),
+            (   Format = date_time
+            ->  valid_date_time(Format, In, date_time(Y,M,D,H,Mn,S,0))
+            ;   valid_date_time(Format, In, date(Y,M,D))
+            )
         )
     ;   valid_date_time(Format, In, Out) % creating a date/6 struct
     ).
