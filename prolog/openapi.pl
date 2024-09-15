@@ -90,8 +90,8 @@ openapi_server(File, Options) :-
 
 expand_openapi_server(File, Options,
                       [ (:- discontiguous((openapi_handler/11,
-                                           openapi_doc/2,
-                                           openapi_error_hook/3)))
+                                           openapi_doc/2))),
+                        (:- multifile((openapi_error_hook/3)))
                       | Clauses
                       ]) :-
     read_openapi_spec(File, Spec, Options, Options1),
