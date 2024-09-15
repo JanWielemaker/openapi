@@ -1666,13 +1666,44 @@ json_check(Type, In, Out) :-
 json_check_in_out_type(In, Out, Type) :- json_check(Type, In, Out).
 json_check_out_in_type(Out, In, Type) :- json_check(Type, In, Out).
 
-number_in_domain(between(Min, Max), Value) :-
-    Value >= Min,
+%!  number_in_domain(+Domain, +Value) is semidet.
+%
+%   True if Value satisfies Domain.
+%   @see type_restrictions/4 creates Domain
+
+number_in_domain(Domain, Value) :-
+    number_in_domain_(Domain, Value),
+    arg(3, Domain, MultipleOf),
+    (   MultipleOf == (-)
+    ->  true
+    ;   Times is Value/MultipleOf,
+        round(Times) =:= Times
+    ).
+
+number_in_domain_(domain(between(Min, Max), ExclMin-ExclMax, _), Value) =>
+    satisfies_min(Min, Value, ExclMin),
+    satisfies_max(Max, Value, ExclMax).
+number_in_domain_(domain(max(Max), ExclMax, _), Value) =>
+    satisfies_max(Max, Value, ExclMax).
+number_in_domain_(domain(min(Min), ExclMin, _), Value) =>
+    satisfies_min(Min, Value, ExclMin).
+
+satisfies_max(Max, Value, false) =>
     Value =< Max.
-number_in_domain(max(Max), Value) :-
-    Value =< Max.
-number_in_domain(min(Min), Value) :-
+satisfies_max(Max, Value, true) =>
+    Value < Max.
+
+satisfies_min(Min, Value, false) =>
     Value >= Min.
+satisfies_min(Min, Value, true) =>
+    Value > Min.
+
+%!  enum_find(+From, +EnumSpec, -Value:atom) is det.
+%
+%   Find the intended enum value from  the   atom  or string From. Deals
+%   with whether or not the enum is specified as case sensitive.
+%
+%   @error domain_error(oneof(Values))
 
 enum_find(From, enum(Values, CaseSensitive, _Case), Value) :-
     to_atom(From, V0),
@@ -1976,12 +2007,24 @@ type_restrictions(Spec, Type0, Type1, Type) :-
     numeric_type(Type0),
     !,
     (   _{minimum:Min, maximum:Max} :< Spec
-    ->  Type = numeric(Type1, between(Min,Max))
+    ->  Type = numeric(Type1, domain(between(Min,Max), ExclMin-ExclMax, MultipleOf))
     ;   _{minimum:Min} :< Spec
-    ->  Type = numeric(Type1, min(Min))
+    ->  Type = numeric(Type1, domain(min(Min), ExclMin, MultipleOf))
     ;   _{maximum:Max} :< Spec
-    ->  Type = numeric(Type1, max(Max))
+    ->  Type = numeric(Type1, domain(max(Max), ExclMax, MultipleOf))
     ;   Type = Type1
+    ),
+    (   _{ exclusiveMinimum: ExclMin} :< Spec
+    ->  true
+    ;   ExclMin = false
+    ),
+    (   _{ exclusiveMaximum: ExclMax} :< Spec
+    ->  true
+    ;   ExclMax = false
+    ),
+    (   _{ multipleOf: MultipleOf} :< Spec
+    ->  true
+    ;   MultipleOf = (-)
     ).
 type_restrictions(Spec, string, string, Type) :-
     setof(Restrict, string_restriction(Spec, Restrict), Restrictions),
