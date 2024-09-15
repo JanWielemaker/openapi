@@ -165,11 +165,17 @@ openapi_read(File, Term) :-
 %
 %     - base_uri(+URI)
 %       Base URI for resolving types.
+%     - type_check_response(+Boolean)
+%       Check the response JSON against the schema (default `true`)
+%     - format_response(+Boolean)
+%       If `true` (default `false`), generate JSON with a nice
+%       layout.
 
 server_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
     root_clause(JSONTerm.servers),
+    server_config_clauses(Options),
     server_path_clauses(Paths, Options),
     json_schema_clauses(JSONTerm, Options).
 
@@ -178,6 +184,18 @@ root_clause([Server|_]) -->
       uri_data(path, Components, Root)
     },
     [ openapi_root(Root) ].
+
+server_config_clauses(Options) -->
+    { findall(Clause, server_config(Clause, Options), Clauses) },
+    string(Clauses).
+
+server_config(openapi_server_config(type_check_response(Mode)), Options) :-
+    option(type_check_response(Mode), Options, true).
+server_config(openapi_server_config(reply_json_options(Opts)), Options) :-
+    (   option(format_response(false), Options, false)
+    ->  Opts = [width(0)]
+    ;   Opts = []
+    ).
 
 server_path_clauses([], _) --> [].
 server_path_clauses([H|T], Options) -->
@@ -1179,7 +1197,7 @@ openapi_run(Module:Request,
             server_handler_options(AsOption, OptionParam)
           ), IE, input_error(IE, RequestParams)),
     call(Module:Handler),
-    catch(openapi_reply(Responses), OE,
+    catch(openapi_reply(Module, Responses), OE,
           output_error(OE)).
 
 %!  input_error(+Error, +RequestParams).
@@ -1267,7 +1285,7 @@ request_body(content(media(application/json,_), Type, Body, _Descr), Request) :-
         json_check(Type, Body0, Body),
         rest(body, request_body, Type)).
 
-%!  openapi_reply(+Responses) is det.
+%!  openapi_reply(+Module, +Responses) is det.
 %
 %   Formulate the HTTP request from a term.  The user handler binds the
 %   response parameter to one of:
@@ -1284,12 +1302,13 @@ request_body(content(media(application/json,_), Type, Body, _Descr), Request) :-
 %   Description), where `Reply` is the  variable   that  is bound by the
 %   user supplied handler.
 
-openapi_reply(Responses) :-
+:- det(openapi_reply/2).
+openapi_reply(Module, Responses) :-
     Responses = [R0|_],
     arg(5, R0, Reply),
     reply_status(Reply, Code, Data),
     memberchk(response(Code, _As, MediaType, Type, _, _Descr), Responses),
-    openapi_reply(Code, MediaType, Type, Data).
+    openapi_reply(Code, MediaType, Type, Data, Module).
 
 reply_status(Var, _, _) :-
     var(Var), !,
@@ -1298,16 +1317,24 @@ reply_status(status(Code, Data), Code, Data) :- !.
 reply_status(status(Code), Code, '') :- !.
 reply_status(Data, 200, Data).
 
-openapi_reply(Code, _, _, '') :-
+%!  openapi_reply(+HTTPCode, +MediaType, +Type, +Data, +Module) is det.
+
+:- det(openapi_reply/5).
+openapi_reply(Code, _, _, '', _) :-
     !,
     format('Status: ~d~n~n', [Code]).
-openapi_reply(Code, media(application/json,_), -, Data) :-
+openapi_reply(Code, media(application/json,_), -, Data, Module) :-
     !,
-    reply_json_dict(Data, [status(Code)]).
-openapi_reply(Code, media(application/json,_), Type, Data) :-
+    Module:openapi_server_config(reply_json_options(Options)),
+    reply_json_dict(Data, [status(Code)|Options]).
+openapi_reply(Code, media(application/json,_), Type, Data, Module) :-
     !,
-    json_check(Type, Out, Data),
-    reply_json_dict(Out, [status(Code)]).
+    (   Module:openapi_server_config(type_check_response(true))
+    ->  json_check(Type, Out, Data)
+    ;   Out = Data
+    ),
+    Module:openapi_server_config(reply_json_options(Options)),
+    reply_json_dict(Out, [status(Code)|Options]).
 
 %!  openapi_error(+Module, +Error, +Responses) is det.
 %
