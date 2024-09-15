@@ -2112,12 +2112,14 @@ file_header(Stream, File, Options) :-
 file_header(Stream, File, Options) :-
     option(mode(server), Options),
     !,
+    findall(Opt, server_option(Opt, Options), ServerOptions),
     format(Stream, ':- use_module(library(openapi)).~n', []),
     format(Stream, ':- use_module(library(option)).~n', []),
     format(Stream, ':- use_module(library(debug)).~n', []),
     server_header(Stream, File, Options),
     format(Stream, '~n', []),
-    format(Stream, ':- openapi_server(~q, []).~n~n', [File]).
+    portray_clause(Stream, (:- openapi_server(File, ServerOptions))),
+    nl(Stream).
 file_header(_, _, _).
 
 %!  client_module(+Stream, +SpecFile, +Options)
@@ -2161,7 +2163,7 @@ export(Stream, OperationId, Args, Sep) :-
 
 %!  client_option(-ClientOption, +Options) is nondet.
 %
-%   Pass options for generatingn the client at runtime.
+%   Pass options for generating the client at runtime.
 
 client_option(warn(false), _Options).
 client_option(type_check_results(Mode), Options) :-
@@ -2173,6 +2175,21 @@ client_option(enum_case_sensitive(Bool), Options) :-
 client_option(enum_case(Case), Options) :-
     option(enum_case(Case), Options),
     must_be(oneof([lower,upper,preserve]), Case).
+
+%!  server_option(-ServerOption, +Options) is nondet.
+%
+%   Pass options for generating the server at runtime.
+
+server_option(type_check_response(Bool), Options) :-
+    option(type_check_response(Bool), Options),
+    must_be(boolean, Bool).
+server_option(format_response(Bool), Options) :-
+    option(format_response(Bool), Options),
+    must_be(boolean, Bool).
+
+%!  server_header(+Stream, +File, +Options) is det.
+%
+%   Emit the header for generating a server.
 
 server_header(Stream, File, Options) :-
     (   option(httpd(true), Options)
