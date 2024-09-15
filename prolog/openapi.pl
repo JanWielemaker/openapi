@@ -174,12 +174,20 @@ openapi_read(File, Term) :-
 server_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
-    root_clause(JSONTerm.servers),
+    root_clause(JSONTerm.servers, Options),
     server_config_clauses(Options),
     server_path_clauses(Paths, Options),
     json_schema_clauses(JSONTerm, Options).
 
-root_clause([Server|_]) -->
+root_clause(_, Options) -->
+    { option(server_url(ServerURL), Options),
+      !,
+      uri_components(ServerURL, Components),
+      uri_data(path, Components, Root)
+    },
+    !,
+    [ openapi_root(Root) ].
+root_clause([Server|_], _Options) -->
     { uri_components(Server.url, Components),
       uri_data(path, Components, Root)
     },
@@ -1350,7 +1358,7 @@ openapi_error(Module, Error, Responses) :-
     map_error(Module, Error, Responses, Reply),
     Responses = [R0|_],
     arg(5, R0, Reply),
-    openapi_reply(Responses),
+    openapi_reply(Module, Responses),
     !.
 openapi_error(_Module, Error, _Responses) :-
     throw(Error).
@@ -2168,13 +2176,8 @@ export(Stream, OperationId, Args, Sep) :-
 client_option(warn(false), _Options).
 client_option(type_check_results(Mode), Options) :-
     option(type_check_results(Mode), Options).
-client_option(server_url(URL), Options) :-
-    option(server_url(URL), Options).
-client_option(enum_case_sensitive(Bool), Options) :-
-    option(enum_case_sensitive(Bool), Options).
-client_option(enum_case(Case), Options) :-
-    option(enum_case(Case), Options),
-    must_be(oneof([lower,upper,preserve]), Case).
+client_option(Option, Options) :-
+    common_option(Option, Options).
 
 %!  server_option(-ServerOption, +Options) is nondet.
 %
@@ -2186,6 +2189,16 @@ server_option(type_check_response(Bool), Options) :-
 server_option(format_response(Bool), Options) :-
     option(format_response(Bool), Options),
     must_be(boolean, Bool).
+server_option(Option, Options) :-
+    common_option(Option, Options).
+
+common_option(server_url(URL), Options) :-
+    option(server_url(URL), Options).
+common_option(enum_case_sensitive(Bool), Options) :-
+    option(enum_case_sensitive(Bool), Options).
+common_option(enum_case(Case), Options) :-
+    option(enum_case(Case), Options),
+    must_be(oneof([lower,upper,preserve]), Case).
 
 %!  server_header(+Stream, +File, +Options) is det.
 %
