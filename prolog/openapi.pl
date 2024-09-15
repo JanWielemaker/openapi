@@ -1391,12 +1391,15 @@ http_error_status(rest(_,_,_), _, 400).
 		 *            TYPES		*
 		 *******************************/
 
-%!  api_type(?Type, ?Format, ?TypeID) is det.
+%!  api_type(?Type, ?Format, ?TypeID) is semidet.
 %
 %
 
 api_type(Type, Format, TypeID) :-
     api_type(_Name, Type, Format, TypeID), !.
+api_type(string, Format, string) :-
+    !,
+    print_message(warning, openapi(unknown_string_format, Format)).
 api_type(Type, Format, _TypeID) :-
     print_message(error, openapi(unknown_type, Type, Format)),
     fail.
@@ -1419,8 +1422,9 @@ api_type(boolean,  boolean,    -,           boolean).
 api_type(date,     string,     date,        date).
 api_type(dateTime, string,     'date-time', date_time).
 api_type(password, string,     password,    password).
-api_type(uri,      string,     uri,         uri).  % Not in OAS
-api_type(uuid,     string,     uuid,        uuid). % Not in OAS
+api_type(string,   string,     string,      string). % Not in OAS
+api_type(uri,      string,     uri,         uri).    % Not in OAS
+api_type(uuid,     string,     uuid,        uuid).   % Not in OAS
 
 %!  oas_type(+Type, ?In, ?Out) is det.
 %
@@ -2697,6 +2701,8 @@ prolog:message(openapi(unknown_type, Type, -)) -->
     [ 'OpenAPI: unrecognized type `~p`'-[Type] ].
 prolog:message(openapi(unknown_type, Type, Format)) -->
     [ 'OpenAPI: unrecognized type `~p` with format `~p`'-[Type, Format] ].
+prolog:message(openapi(unknown_string_format, Format)) -->
+    [ 'OpenAPI: Using plain "string" for string with format `~p`'-[Format] ].
 
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
