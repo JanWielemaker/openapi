@@ -1617,7 +1617,7 @@ json_check(oneOf(Types), In, Out) :-
             ->  type_error(oneOf(Types), In)
             ;   true
             )
-        ;   type_error(oneOf(Types), Out)
+        ;   type_error(oneOf(Types), In)
         )
     ;   append(_, [Type|Rest], Types),
         catch(json_check(Type, In, Out), Error, fail)
@@ -1626,7 +1626,7 @@ json_check(oneOf(Types), In, Out) :-
         ->  type_error(oneOf(Types), Out)
         ;   true
         )
-    ;   type_error(oneOf(Types), In)
+    ;   type_error(oneOf(Types), Out)
     ).
 json_check(allOf(Types), In, Out) :-
     !,
