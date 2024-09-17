@@ -58,9 +58,9 @@
 :- use_module(library(http/http_json)).
 :- use_module(library(http/http_parameters)).
 :- use_module(library(http/http_header)).
-:- use_module(library(listing), [portray_clause/2]).
+:- use_module(library(listing), [portray_clause/2, portray_clause/1]).
 :- use_module(library(pprint), [print_term/2]).
-:- use_module(library(http/http_open)).         % http_open/3 is called by
+:- use_module(library(http/http_open)).
 :- use_module(library(pcre), [re_match/3]).
 :- use_module(library(dcg/high_order), [sequence/5]).
 
@@ -2395,14 +2395,51 @@ openapi_doc(OperationId, Data, Options) -->
     "\n",
     server_skeleton(OperationId, Data.arguments, Options).
 
+%!  server_skeleton(+OperationId, +Args:list, +Options)// is det.
+%
+%   Generate the skeleton clause for the operation.
+
+:- det(server_skeleton//3).
+server_skeleton(_OperationId, _Args, Options) -->
+    { option(mode(client), Options) },
+    !.
 server_skeleton(OperationId, Args, Options) -->
-    { option(mode(server), Options) },
-    !,
-    server_head(OperationId, Args), " :-",
-    "\n    debug(openapi, \"~p\", [",
-		 server_head(OperationId, Args), "]),",
-    "\n    Response = status(404).\n\n".
-server_skeleton(_,_,_) --> [].
+    { option(mode(server), Options),
+      maplist(server_arg_name, Args, ArgNames),
+      Head =.. [OperationId|ArgNames],
+      server_skeleton_clause(Head, Clause),
+      (   string(Clause)
+      ->  string_codes(Clause, Codes)
+      ;   with_output_to(codes(Codes),
+                         portray_clause(Clause))
+      )
+    },
+    string(Codes).
+
+%!  server_skeleton_clause(+Head, -Clause) is det.
+%
+%   Generate the server skeleton clause.  This predicate can be hooked
+%   using user:openapi_server_clause/2 with the same signature.
+%
+%   @arg Head is a term OperationId(Arg, ...),   where  each arg has the
+%   shape  '$VAR'(Name)  and  Name  is  the  CamelCase  version  of  the
+%   parameter, a valid name for a Prolog variable.
+%   @arg Clause is either a string, which is inserted into the output
+%   untranslated or a term that is handed to portray_clause/1.
+
+:- det(server_skeleton_clause/2).
+:- multifile
+    user:openapi_server_clause/2.
+server_skeleton_clause(Head, Clause) :-
+    user:openapi_server_clause(Head, Clause),
+    !.
+server_skeleton_clause(Head, Clause) :-
+    functor(Head, _, Arity),
+    arg(Arity, Head, Response),
+    Clause = (Head :-
+                  debug(openapi, "~p", [Head]),
+                  Response = status(404)).
+
 
 doc_mode(OperationId, Args) -->
     "%! ", quoted_atom(OperationId),
@@ -2423,21 +2460,8 @@ mode_arg(p(Name, _Type, _Descr)) -->
 mode(response) --> !, "-".
 mode(_) --> "+".
 
-server_head(OperationId, Args) -->
-    quoted_atom(OperationId),
-    "(", arguments(Args), ")".
-
-arguments([]) --> [].
-arguments([H|T]) -->
-    argument(H),
-    (  {T==[]}
-    -> []
-    ;  ", ",
-       arguments(T)
-    ).
-
-argument(p(Name, _Type, _Descr)) -->
-    camel_case(Name).
+server_arg_name(p(Param, _Type, _Descr), '$VAR'(ArgName)) :-
+    camel_case(Param, ArgName).
 
 quoted_atom(Atom, List, Tail) :-
     format(codes(List,Tail), '~q', [Atom]).

@@ -14,6 +14,7 @@ main(Argv) :-
     (   option(client(_), Options)
     ;   option(server(_), Options)
     ), !,
+    load_hook(Options),
     setup_debug(Options),
     maplist(generate(Options), Files).
 main(_) :-
@@ -53,6 +54,10 @@ output_options(server(true), From, [file(Out)]) :-
 output_options(client(File), _, [file(File)]).
 output_options(server(File), _, [file(File)]).
 
+load_hook(Options) :-
+    forall(member(hook(File), Options),
+           ensure_loaded(user:File)).
+
 setup_debug(Options) :-
     forall(member(spy(Spy), Options),
            (   term_string(Term, Spy),
@@ -86,4 +91,5 @@ usage :-
   --server_url=URL             Make client contact server at URL
   --ui		               Include Swagger UI (implies --httpd)
   --httpd                      Include REST HTTP server
+  --hook=file                  Load indicated Prolog file
 ', []).
