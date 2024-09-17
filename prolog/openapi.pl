@@ -217,8 +217,9 @@ server_path_clauses([H|T], Options) -->
 
 server_path_clause(Path-Spec, Options) -->
     { dict_pairs(Spec, _, Methods0),
-      (   selectchk(parameters-Parms, Methods0, Methods)
-      ->  Options1 = [parameters(Parms)|Options]
+      (   selectchk(parameters-Parms0, Methods0, Methods)
+      ->  deref(Parms0, Parms, Options),
+          Options1 = [parameters(Parms)|Options]
       ;   Methods = Methods0,
           Options1 = Options
       )
@@ -277,8 +278,8 @@ path_handler(Path, Method, Spec,
 
 spec_parameters(Spec, Parameters, Options) :-
     option(parameters(Common), Options, []),
-    (   Me = Spec.get(parameters)
-    ->  true
+    (   Me0 = Spec.get(parameters)
+    ->  deref(Me0, Me, Options)
     ;   Me = []
     ),
     append(Common, Me, Parameters),
@@ -378,6 +379,7 @@ hp_description(Spec) -->
 hp_description(_) --> [].
 
 deref(Spec, Yaml, Options) :-
+    is_dict(Spec),
     _{'$ref':URLS} :< Spec,
     sub_atom(URLS, 0, _, _, './'),
     !,
@@ -385,11 +387,13 @@ deref(Spec, Yaml, Options) :-
     uri_normalized(URLS, Base, URL),
     url_yaml(URL, Yaml).
 deref(Spec, Yaml, Options) :-
+    is_dict(Spec),
     _{'$ref':Ref} :< Spec,
     atomic_list_concat(Segments, /, Ref),
     !,
     option(yaml(Doc), Options),
     yaml_subdoc(Segments, Doc, Yaml).
+deref(Yaml, Yaml, _).
 
 yaml_subdoc([], Doc, Doc).
 yaml_subdoc([H|T], Doc, Sub) :-
