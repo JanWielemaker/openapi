@@ -1272,7 +1272,7 @@ header_parameter(Request, HdrParam) :-
     Header =.. [Name,Arg],
     (   memberchk(Header, Request)
     ->  true
-    ;   print_message(warning, openapi(missing_header(HdrParam)))
+    ;   print_message(warning, error(rest_error(missing_header(Name)), _))
     ).
 
 %!  request_body(+ContentSpec, +Request) is det.
@@ -2786,6 +2786,8 @@ prolog:message(openapi(unknown_type, Type, Format)) -->
 prolog:message(openapi(unknown_string_format, Format)) -->
     [ 'OpenAPI: Using plain "string" for string with format `~p`'-[Format] ].
 
+prolog:error_message(rest_error(missing_header(Name))) -->
+    [ 'REST error: missing header: ', ansi(code, '~p', [Name]) ].
 prolog:error_message(rest_error(Code, Term)) -->
     [ 'REST error: code: ~p, data: ~p'-[Code, Term] ].
 prolog:error_message(openapi_invalid_reply(Code, ExCodes, Error)) -->
