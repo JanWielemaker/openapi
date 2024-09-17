@@ -1610,7 +1610,12 @@ json_check(oneOf(Types), In, Out) :-
     !,
     Error = error(_,_),
     (   nonvar(In)
-    ->  (   append(_, [Type|Rest], Types),
+    ->  candidate_types(Types, In, Candidates, Best),
+        (   Candidates = []                        % no candidate, best error
+        ->  json_check(Best, In, Out)
+        ;   Candidates = [Type]                    % one candidate, check
+        ->  json_check(Type, In, Out)
+        ;   append(_, [Type|Rest], Types),         % find type and verify no 2nd
             catch(json_check(Type, In, Out), Error, fail)
         ->  (   member(T2, Rest),
                 catch(json_check(T2, In, _), Error, fail)
@@ -1619,14 +1624,20 @@ json_check(oneOf(Types), In, Out) :-
             )
         ;   type_error(oneOf(Types), In)
         )
-    ;   append(_, [Type|Rest], Types),
-        catch(json_check(Type, In, Out), Error, fail)
-    ->  (   member(T2, Rest),
-            catch(json_check(T2, _, Out), Error, fail)
-        ->  type_error(oneOf(Types), Out)
-        ;   true
+    ;   candidate_types(Types, Out, Candidates, Best),
+        (   Candidates = []
+        ->  json_check(Best, In, Out)
+        ;   Candidates = [Type]
+        ->  json_check(Type, In, Out)
+        ;   append(_, [Type|Rest], Candidates),
+            catch(json_check(Type, In, Out), Error, fail)
+        ->  (   member(T2, Rest),
+                catch(json_check(T2, _, Out), Error, fail)
+            ->  type_error(oneOf(Types), Out)
+            ;   true
+            )
+        ;   type_error(oneOf(Types), Out)
         )
-    ;   type_error(oneOf(Types), Out)
     ).
 json_check(allOf(Types), In, Out) :-
     !,
@@ -1658,9 +1669,9 @@ json_check(enum(Values, CaseSensitive, Case), In, Out) :-
     Enum = enum(Values, CaseSensitive, Case),
     !,
     (   var(In)                                    % Out -> In
-    ->  enum_find(Out, Enum, Value),
+    ->  enum_find_ex(Out, Enum, Value),
         to_string(Value, In)
-    ;   enum_find(In, Enum, Value),
+    ;   enum_find_ex(In, Enum, Value),
         enum_case(Case, Value, Out)
     ).
 json_check(numeric(Type, Domain), In, Out) :-
@@ -1682,6 +1693,72 @@ json_check(Type, In, Out) :-
 
 json_check_in_out_type(In, Out, Type) :- json_check(Type, In, Out).
 json_check_out_in_type(Out, In, Type) :- json_check(Type, In, Out).
+
+%!  candidate_types(+Types, +Data, -Candidates:list(type), -Best:type)
+%
+%   True when Candidates is a list of types   that may match and Best is
+%   the closest matching candidate.
+
+:- det(candidate_types/4).
+candidate_types(Types, Data, Candidates, Best) :-
+    maplist(candidate_type(Data), Types, Scores),
+    pairs_keys_values(Best0, Types, Scores),
+    sort(2, @>=, Best0, Best1),
+    Best1 = [Best-_|_],
+    convlist(is_candidate, Best1, Candidates).
+
+is_candidate(Type-(_-0), Type).
+
+%!  candidate_type(+Data, +Type, -Score:pair(Match,Mismatch)) is det.
+%
+%   Check whether Data may  satisfy  Type.   If  Mismatch  is  zero, all
+%   required values are present and all enums are satisfied. Mismatch is
+%   incremented on each missing required property or missing enum value.
+
+candidate_type(Data, Type, Match-Mismatch) :-
+    State = state(0,0),
+    candidate_type_(Type, Data, State),
+    State = state(Match, Mismatch).
+
+candidate_type_(object(Props), Data, State) :-
+    !,
+    (   is_dict(Data)
+    ->  (   member(p(Name, Type, Opts), Props),
+            (   Field = Data.get(Name)
+            ->  incr_match(State),
+                candidate_type_(Type, Field, State)
+            ;   memberchk(required, Opts)
+            ->  incr_mismatch(State)
+            ;   true
+            ),
+            fail
+        ;   true
+        )
+    ;   incr_mismatch(State)
+    ).
+candidate_type_(Type, Data, State) :-
+    Type = enum(_, _, _),
+    !,
+    (   (   atom(Data)
+        ->  true
+        ;   string(Data)
+        ),
+        (   enum_find(Data, Type, _Value)
+        ->  incr_match(State)
+        ;   incr_mismatch(State)
+        )
+    ;   incr_mismatch(State)
+    ).
+candidate_type_(_, _, _).
+
+incr_match(State) :-
+    arg(1, State, M0),
+    M1 is M0+1,
+    nb_setarg(1, State, M1).
+incr_mismatch(State) :-
+    arg(2, State, M0),
+    M1 is M0-1,
+    nb_setarg(2, State, M1).
 
 %!  number_in_domain(+Domain, +Value) is semidet.
 %
@@ -1715,7 +1792,8 @@ satisfies_min(Min, Value, false) =>
 satisfies_min(Min, Value, true) =>
     Value > Min.
 
-%!  enum_find(+From, +EnumSpec, -Value:atom) is det.
+%!  enum_find(+From, +EnumSpec, -Value:atom) is semidet.
+%!  enum_find_ex(+From, +EnumSpec, -Value:atom) is det.
 %
 %   Find the intended enum value from  the   atom  or string From. Deals
 %   with whether or not the enum is specified as case sensitive.
@@ -1731,7 +1809,13 @@ enum_find(From, enum(Values, CaseSensitive, _Case), Value) :-
         member(V1, Values),
         downcase_atom(V1, VL)
     ->  Value = V1
-    ;   domain_error(oneof(Values), From)
+    ).
+
+enum_find_ex(From, Enum, Value) :-
+    (   enum_find(From, Enum, Value)
+    ->  true
+    ;   arg(1, Enum, Values),
+        domain_error(oneof(Values), From)
     ).
 
 enum_case(preserve, Out0, Out) => Out = Out0.
