@@ -1826,6 +1826,12 @@ enum_case(preserve, Out0, Out) => Out = Out0.
 enum_case(lower,    Out0, Out) => downcase_atom(Out0, Out).
 enum_case(upper,    Out0, Out) => upcase_atom(Out0, Out).
 
+check_string_restriction(String, min_length(MinLen)) =>
+    string_length(String, Len),
+    (   Len >= MinLen
+    ->  true
+    ;   domain_error(string(minLength>=MinLen), String)
+    ).
 check_string_restriction(String, max_length(MaxLen)) =>
     string_length(String, Len),
     (   Len =< MaxLen
@@ -2142,6 +2148,8 @@ numeric_type(number).
 
 string_restriction(Spec, max_length(Len)) :-
     Len = Spec.get(maxLength).
+string_restriction(Spec, min_length(Len)) :-
+    Len = Spec.get(minLength).
 string_restriction(Spec, pattern(Regex)) :-
     atom_string(Regex, Spec.get(pattern)).
 
@@ -2685,6 +2693,7 @@ obj_property_attr(required) --> "R".
 obj_property_attr(nullable) --> "N".
 
 str_attr(max_length(Len)) --> format("=<~w", [Len]).
+str_attr(min_length(Len)) --> format(">=~w", [Len]).
 
 prefix(Indent, Prefix, NewIndent) -->
     here(Start),
