@@ -369,7 +369,7 @@ hp_schema(Spec, Options) -->
 hp_schema(_Spec, _Options) -->
     { start_debugger_fail }.
 
-json_param_type(array(Type), list(openapi(Type))) :- !.
+json_param_type(array(Type, _), list(openapi(Type))) :- !.
 json_param_type(Type, openapi(Type)).
 
 hp_description(Spec) -->
@@ -1002,8 +1002,8 @@ application_extra_query_parameters(_, _, _, []).
 
 %!  array_query(Query)//
 %
-%   Rewrite Name=List into Name=E1, Name=E2,  ... to support array(Type)
-%   for parameters passed as queries.
+%   Rewrite Name=List into Name=E1, Name=E2, ... to support array(Type,
+%   Opts) for parameters passed as queries.
 
 array_query([]) --> [].
 array_query([Name=Value|T]) -->
@@ -1233,7 +1233,7 @@ input_error(E, _RequestParams) :- throw(E).
 http_param_type(Options, Type) :-
     memberchk(openapi(Type), Options),
     !.
-http_param_type(Options, array(Type)) :-
+http_param_type(Options, array(Type, _)) :-
     memberchk(list(openapi(Type)), Options),
     !.
 
@@ -1602,14 +1602,17 @@ json_check(object(Properties), In, Out) :-
         obj_properties_out(OutPairs, Properties, InPairs),
         dict_pairs(In, _, InPairs)
     ).
-json_check(array(Type), In, Out) :-
+json_check(array(Type, Opts), In, Out) :-
     !,
     (   is_list(In)
-    ->  maplist(json_check(Type), In, Out)
+    ->  check_array_length(In, Opts),
+        maplist(json_check(Type), In, Out)
     ;   is_list(Out)
-    ->  maplist(json_check(Type), In, Out)
+    ->  check_array_length(Out, Opts),
+        maplist(json_check(Type), In, Out)
     ;   must_be(list, In, Out)
-    ).
+    ),
+    check_array_unique(In, Opts).
 json_check(oneOf(Types), In, Out) :-
     !,
     Error = error(_,_),
@@ -1965,7 +1968,7 @@ http:convert_parameter(openapi(Type), In, Out) :-
 %
 %   Spec is one of
 %
-%     - array(ItemType)
+%     - array(ItemType, Options)
 %     - object(Properties)
 %       Properties is an ordered list of
 %       - p(Name, Type, Properties)
@@ -2051,9 +2054,10 @@ json_type(Spec, object(Props), Options) :-
     ),
     maplist(schema_property(Req, Options), Pairs, Props0),
     sort(Props0, Props).
-json_type(Spec, array(Type), Options) :-
+json_type(Spec, array(Type, Opts), Options) :-
     _{type:"array", items:IType} :< Spec,
     !,
+    array_restrictions(Spec, Opts),
     json_type(IType, Type, Options).
 json_type(Spec, oneOf(Types), Options) :-
     _{oneOf:List} :< Spec,
@@ -2152,6 +2156,49 @@ string_restriction(Spec, min_length(Len)) :-
     Len = Spec.get(minLength).
 string_restriction(Spec, pattern(Regex)) :-
     atom_string(Regex, Spec.get(pattern)).
+
+array_restrictions(Spec, Options) :-
+    findall(Opt, array_restriction(Spec, Opt), Options).
+
+array_restriction(Spec, min_items(Min)) :-
+    Min = Spec.get(minItems).
+array_restriction(Spec, max_items(Max)) :-
+    Max = Spec.get(minItems).
+array_restriction(Spec, unique_items(true)) :-
+    true == Spec.get(uniqueItems).
+
+check_array_length(List, Opts) :-
+    memberchk(max_items(Max), Opts),
+    !,
+    (   memberchk(min_items(Min), Opts)
+    ->  true
+    ;   Min = 0
+    ),
+    length(List, Len),
+    (   between(Min, Max, Len)
+    ->  true
+    ;   domain_error(array_length(Min,Max), List)
+    ).
+check_array_length(List, Opts) :-
+    memberchk(min_items(Min), Opts),
+    !,
+    length(List, Len),
+    (   Len >= Min
+    ->  true
+    ;   domain_error(array_length(Min,infinite), List)
+    ).
+check_array_length(_, _).
+
+check_array_unique(List, Opts) :-
+    memberchk(unique_items(true), Opts),
+    !,
+    (   length(List, Len),
+        sort(List, Sorted),
+        length(Sorted, Len)
+    ->  true
+    ;   domain_error(unique_array, List)
+    ).
+check_array_unique(_, _).
 
 %!  url_yaml(+URL, -Yaml:json) is semidet.
 %
@@ -2643,10 +2690,14 @@ type(url(URL)) -->
 type(Type) -->
     type(Type, 0).
 
-type(array(Type), Indent) -->
+type(array(Type, Opts), Indent) -->
     !,
     prefix(Indent, "array(", NewIndent),
-    type(Type, NewIndent), ")".
+    type(Type, NewIndent), ")",
+    (   {Opts == []}
+    ->  []
+    ;   " [", sequence(array_attr, ",", Opts), "]"
+    ).
 type(string([pattern(Pattern)]), _Indent) -->
     !,
     "/", atom(Pattern), "/".
@@ -2692,8 +2743,12 @@ obj_property_attrs(Opts) -->
 obj_property_attr(required) --> "R".
 obj_property_attr(nullable) --> "N".
 
-str_attr(max_length(Len)) --> format("=<~w", [Len]).
 str_attr(min_length(Len)) --> format(">=~w", [Len]).
+str_attr(max_length(Len)) --> format("=<~w", [Len]).
+
+array_attr(min_items(Len)) --> format(">=~w", [Len]).
+array_attr(max_items(Len)) --> format("=<~w", [Len]).
+array_attr(unique_items(true)) --> "unique".
 
 prefix(Indent, Prefix, NewIndent) -->
     here(Start),
