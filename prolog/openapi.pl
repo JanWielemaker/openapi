@@ -552,7 +552,7 @@ response_description(_, "") .
 %   schema.
 
 content_type(_Spec, media(application/json, []), Type, Options) :-
-    option(type_check_results(false), Options),
+    option(type_check_request(false), Options),
     !,
     Type = (-).
 content_type(Spec, media(application/json, []), Type, Options) :-
@@ -2326,8 +2326,8 @@ export(Stream, OperationId, Args, Sep) :-
 %   Pass options for generating the client at runtime.
 
 client_option(warn(false), _Options).
-client_option(type_check_results(Mode), Options) :-
-    option(type_check_results(Mode), Options).
+client_option(type_check_request(Mode), Options) :-
+    option(type_check_request(Mode), Options).
 client_option(Option, Options) :-
     common_option(Option, Options).
 
