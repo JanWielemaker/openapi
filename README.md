@@ -17,10 +17,10 @@ a lot of the infrastructure to implement the second option.
 The single library(openapi) implements the following components:
 
   1. A compiler that creates a Prolog friendly representation of
-     the operations described in the swagger file.
+     the operations described in the OpenAPI file.
   2. An HTTP request dispatcher that uses the above to
      - Find the operation
-     - Extract the parameters (from path, query and request body)
+     - Extract the parameters (from headers, path, query and request body)
      - Check the argument types
      - Call the (user defined) implementation
      - Check the response type
@@ -28,21 +28,21 @@ The single library(openapi) implements the following components:
   3. A compiler that creates the client predicates as wrappers
      around http_open/3.  The wrapper does
      - Type-check the parameters
-     - Use the parameters to formulate a URL and optional
-       request body for http_open/3.
+     - Use the parameters to populate the request header,
+	   formulate the URL and optional request body for http_open/3.
      - Run the request
-     - Type-check and return the returned answer
+     - Type-check and return the returned answer.
 
-In addition, there is  a  script   `swi-openapi`  that  wraps  the above
-library to create the  skeleton  server   and  client,  including  PlDoc
-comments for the operations.
+In addition, there  is a SWI-Prolog _app_ script  `openapi` that wraps
+the above library to create  the skeleton server and client, including
+PlDoc comments for the operations.
 
 ## Using this package
 
-First of all, obtain a Swagger file using *Swagger version 3.0*. Now, to
-generate a *server*, do
+First of all,  obtain an OpenAPI file using *OpenAPI  version 3*. Now,
+to generate a *server*, do
 
-    swi-openapi --server=server.pl spec.yaml
+    swipl openapi --server=server.pl spec.yaml
 
 This  creates  a  Prolog  file  `server.pl`  with  documented  predicate
 skeletons that must be filled by  you.   We  advice  to write the actual
@@ -59,17 +59,17 @@ There are additional options:
 
 To generate a *client* run
 
-    swi-openapi --client=client.pl spec.yaml
+    swipl openapi --client=client.pl spec.yaml
 
 This creates documented predicates that call the API. The server address
-is extracted from `spec.yaml`.  Probably the best way to use this is to
-include `client.pl` into your project using `include/1`.
+is extracted from `spec.yaml`.   Using the option `--module`, the client
+file is created as a Prolog module that exports the API.
 
 ## The predicate mapping
 
-The `operationId` from the Swagger file  is   used  as the *name* of the
+The `operationId` from the OpenAPI file  is   used  as the *name* of the
 predicate, both for the server and client. The *arguments* are extracted
-from the `parameters` specification  in   the  Swagger  file. *Required*
+from the `parameters` specification  in   the  OpenAPI  file. *Required*
 arguments use a normal Prolog argument. *Optional* parameters are passed
 using a Prolog _option list_.  If  there   is  a  return  value, this is
 positioned after the required argument and   before  the option list. On
@@ -100,7 +100,4 @@ See the `examples` directory for two examples from the Swagger site.
 
 # Prerequisites
 
-SWI-Prolog 7.7.11 for basic operation. This  version   has  a bug in the
-YAML parser and lacks an extension  to `http_parameters/2` that supports
-more precise HTTP error reports.
-
+SWI-Prolog 9.2/9.3.
