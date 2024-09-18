@@ -40,20 +40,20 @@
 :- initialization(main, main).
 
 main(Argv) :-
-    argv_options(Argv, Files, Options),
+    argv_options(Argv, [File], Options),
     (   option(client(_), Options)
     ;   option(server(_), Options)
     ), !,
     load_hook(Options),
     setup_debug(Options),
-    generate(Files, Options).
-
-generate([File], Options) =>
-    gen_client(File, Options),
-    gen_server(File, Options).
-generate(_, _) =>
+    generate(File, Options).
+main(_Argv) :-
     usage,
     halt(1).
+
+generate(File, Options) =>
+    gen_client(File, Options),
+    gen_server(File, Options).
 
 gen_client(File, Options) :-
     option(client(Client), Options), !,
