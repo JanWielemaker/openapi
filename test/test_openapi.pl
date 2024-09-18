@@ -3,7 +3,8 @@
     Author:        Jan Wielemaker
     E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (c)  2018, VU University Amsterdam
+    Copyright (c)  2018-2024, VU University Amsterdam
+                              SWI-Prolog Solutions b.v.
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -39,33 +40,27 @@
 :- use_module('../prolog/openapi').
 
 test_openapi :-
-    run_tests([ openapi,
-                json_schema
+    run_tests([ json_schema
               ]).
-
-:- begin_tests(openapi).
-
-:- end_tests(openapi).
-
 
 :- begin_tests(json_schema).
 
 test(object, Out = _{}) :-
     json_check(object, _{}, Out).
 test(object, Out = _{a:hello}) :-
-    json_check(object([ p(a, string, true)
+    json_check(object([ p(a, string, [required])
                       ]), _{a:"hello"}, Out).
 test(object, Out = _{a:hello, b:1}) :-
-    json_check(object([ p(a, string, true)
+    json_check(object([ p(a, string, [required])
                       ]), _{a:"hello", b:1}, Out).
 test(object, Out = _{c:hello, b:1}) :-
-    json_check(object([ p(c, string, true)
+    json_check(object([ p(c, string, [required])
                       ]), _{c:"hello", b:1}, Out).
-test(object, Out = _{c:"hello", b:1}) :-        % Dubious
-    json_check(object([ p(d, string, false)
+test(object, Out = _{c:"hello", b:1}) :-
+    json_check(object([ p(d, string, [])
                       ]), _{c:"hello", b:1}, Out).
 test(object, Out = _{a:hello}) :-
-    json_check(object([ p(a, string, true)
+    json_check(object([ p(a, string, [required])
                       ]), json([a=hello]), Out).
 
 json_check(Type, In, Out) :-
