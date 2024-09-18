@@ -174,7 +174,7 @@ openapi_read(File, Term) :-
 server_clauses(JSONTerm, Options) -->
     { dict_pairs(JSONTerm.paths, _, Paths)
     },
-    root_clause(JSONTerm.servers, Options),
+    root_clause(JSONTerm, Options),
     server_config_clauses(Options),
     server_path_clauses(Paths, Options),
     json_schema_clauses(JSONTerm, Options).
@@ -187,11 +187,15 @@ root_clause(_, Options) -->
     },
     !,
     [ openapi_root(Root) ].
-root_clause([Server|_], _Options) -->
-    { uri_components(Server.url, Components),
+root_clause(Spec, _Options) -->
+    { Spec.get(servers) = [Server|_],
+      !,
+      uri_components(Server.url, Components),
       uri_data(path, Components, Root)
     },
     [ openapi_root(Root) ].
+root_clause(_Spec, _Options) -->
+    [ openapi_root('') ].
 
 server_config_clauses(Options) -->
     { findall(Clause, server_config(Clause, Options), Clauses) },
@@ -2448,7 +2452,8 @@ openapi_doc(OperationId, Data, Options) -->
     doc_args(Data.arguments),
     doc_path(Data.doc),
     "\n",
-    server_skeleton(OperationId, Data.arguments, Options).
+    server_skeleton(OperationId, Data.arguments, Options),
+    "\n\n".
 
 %!  server_skeleton(+OperationId, +Args:list, +Options)// is det.
 %
