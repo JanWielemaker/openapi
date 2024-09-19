@@ -2584,6 +2584,10 @@ uncamel_([L,0'_,Lower|T]) -->
     },
     !,
     uncamel_(T).
+uncamel_([0'_|T]) -->
+    "-",
+    !,
+    uncamel_(T).
 uncamel_([H|T]) -->
     [H],
     !,
