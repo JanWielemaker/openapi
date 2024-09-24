@@ -2601,24 +2601,27 @@ uncamel_([]) -->
 
 doc_description(Doc) -->
     { memberchk(summary(Summary), Doc),
-      memberchk(description(Desc), Doc),
-      string_lines(Desc, Lines)
+      memberchk(description(Desc), Doc)
     }, !,
-    "%  ", atom(Summary), "\n",
-    lines(Lines, "%  "),
+    multiline_comment(Summary),
+    multiline_comment(Desc),
     "%\n".
 doc_description(Doc) -->
-    { memberchk(description(Desc), Doc),
-      string_lines(Desc, Lines)
+    { memberchk(description(Desc), Doc)
     }, !,
-    lines(Lines, "%  "),
+    multiline_comment(Desc),
     "%\n".
 doc_description(Doc) -->
     { memberchk(summary(Summary), Doc)
     }, !,
-    "%  ", atom(Summary), "\n",
+    multiline_comment(Summary),
     "%\n".
 doc_description(_) -->  [].
+
+multiline_comment(Text) -->
+    { string_lines(Text, Lines)
+    },
+    lines(Lines, "%  ").
 
 string_lines(String, Lines) :-
     split_string(String, "\n", "", Lines0),
