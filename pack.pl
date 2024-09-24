@@ -1,5 +1,5 @@
 name(openapi).
-version('0.7.0').
+version('0.7.1').
 title('OpenAPI (Swagger) interface').
 keywords(['OpenAPI', 'Swagger', 'REST', 'HTTP', service]).
 author( 'Jan Wielemaker', 'jan@swi-prolog.org' ).
