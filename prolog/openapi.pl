@@ -40,7 +40,8 @@
             openapi_client/2,                   % +File, +Options
 
             openapi_doc/3,                      % +File, +Mode, +Options
-            openapi_arg/4                       % :PredName, ?Index, ?Name, ?Type
+            openapi_arg/4,                      % :PredName, ?Index, ?Name, ?Type
+            openapi_response/2                  % :PredicateName, Responses:list
           ]).
 :- use_module(library(apply)).
 :- use_module(library(apply_macros), []).
@@ -76,7 +77,8 @@ parameters as well as responses.
 
 :- meta_predicate
     openapi_dispatch(:),
-    openapi_arg(:, ?, ?, ?).
+    openapi_arg(:, ?, ?, ?),
+    openapi_response(:, -).
 
 %!  openapi_server(+File, +Options)
 %
@@ -2411,28 +2413,52 @@ server(Port) :-
 		 *        INTROSPECTION		*
 		 *******************************/
 
-%!  openapi_arg(?PredicateName, ?Index, ?Name, ?Type) is nondet.
+%!  openapi_arg(:PredicateName, ?Index, ?Name, ?Type) is nondet.
 %
 %   True when PredicateName's one-based Index-th argument is named
 %   Name and has type Type.
-%
-%   @arg Type is as defined by the first argument of json_check/3.
 
 % Server clauses
-openapi_arg(M:OperationId, ArgI, Arg, Type) :-
+openapi_arg(M:OperationId, Index, Name, Type) :-
     Clause = openapi_handler(_Method, _PathList, _SegmentMatches,
                              _Request, _HdrParams, _AsOption, _OptionParam,
                              _Content, _Responses, _Security, Handler),
     clause(M:Clause, true),
     functor(Handler, OperationId, _),
     clause_data(Clause, module(M), OperationId, Data, []),
-    nth1(ArgI, Data.arguments, p(Arg, Type, _Description)).
+    once(append(Inputs, [p(response, _, _)], Data.arguments)),
+    nth1(Index, Inputs, p(Name, Type, _Description)).
 % client clauses
 openapi_arg(M:OperationId, ArgI, Arg, Type) :-
     Clause = openapi_type(Head),
     clause(M:Clause, true),
     functor(Head, OperationId, _),
     arg(ArgI, Head, Arg:Type).
+
+%!  openapi_response(:PredicateName, Responses:list) is nondet.
+%
+%   True when Responses is  a  list   of  terms  describing the possible
+%   responses for PredicateName. Each Response  is a term response(Code,
+%   As, MediaType, Type), where
+%
+%     - Code is the numeric HTTP status code or a variable for
+%       `default`
+%     - As describes how to handle the code.  Currently one of
+%       `data` or `error`
+%     - MediaType is the expected response type
+%     - Type is the (JSON) schema describing a JSON result
+
+openapi_response(M:OperationId, Responses) :-
+    Clause = openapi_handler(_Method, _PathList, _SegmentMatches,
+                             _Request, _HdrParams, _AsOption, _OptionParam,
+                             _Content, Responses0, _Security, Handler),
+    clause(M:Clause, true),
+    functor(Handler, OperationId, _),
+    maplist(public_response, Responses0, Responses).
+
+public_response(response(Code, As, MediaType, Type, _Result, _Descr),
+                response(Code, As, MediaType, Type)).
+
 
 
 		 /*******************************
