@@ -1191,7 +1191,8 @@ openapi_dispatch(M:Request) :-
                       Handler),
     match_path_list(PathList, Path),
     !,
-    (   catch(openapi_run(M:Request,
+    (   Error = error(_,_),
+        catch(openapi_run(M:Request,
                           Segments,
                           Required, HdrParams, AsOption, OptionParam, Content,
                           Responses,
@@ -1208,6 +1209,7 @@ openapi_run(Module:Request,
             Responses,
             Handler) :-
     append(Required, AsOption, RequestParams),
+    IE = error(_,_),
     catch(( maplist(segment_parameter, Segments),
             maplist(header_parameter(Request), HdrParams),
             http_parameters([method(get)|Request], RequestParams),
@@ -1215,6 +1217,7 @@ openapi_run(Module:Request,
             server_handler_options(AsOption, OptionParam)
           ), IE, input_error(IE, RequestParams)),
     call(Module:Handler),
+    OE = error(_,_),
     catch(openapi_reply(Module, Responses), OE,
           output_error(OE)).
 
